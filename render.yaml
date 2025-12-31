@@ -1,0 +1,129 @@
+# Render平台部署配置文件（Blueprint格式）
+# TradingAgents-CN v1.0.0-preview
+# 文档: https://render.com/docs/blueprint-spec
+
+services:
+  # Web服务 - 单体Docker容器
+  - type: web
+    name: tradingagents-cn
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    region: singapore  # 选择离您最近的区域
+    plan: free  # 免费套餐（512MB RAM）
+    
+    # 构建配置
+    buildFilter:
+      paths:
+        - app/**
+        - frontend/**
+        - tradingagents/**
+        - config/**
+        - scripts/**
+        - Dockerfile.render
+        - docker-entrypoint.render.sh
+        - nginx/nginx.render.conf
+    
+    # 健康检查
+    healthCheckPath: /health
+    
+    # 环境变量配置
+    envVars:
+      # ============================================
+      # 必需配置（请在Render Dashboard中设置）
+      # ============================================
+      
+      # OpenAI API配置（必需）
+      - key: OPENAI_API_KEY
+        sync: false  # 需要手动设置
+      
+      # Tushare数据源（可选，建议配置）
+      - key: TUSHARE_TOKEN
+        sync: false
+      
+      # ============================================
+      # 数据库配置（容器内部连接）
+      # ============================================
+      
+      - key: TRADINGAGENTS_MONGODB_URL
+        value: mongodb://localhost:27017/tradingagents
+      
+      - key: TRADINGAGENTS_REDIS_URL
+        value: redis://localhost:6379
+      
+      - key: TRADINGAGENTS_CACHE_TYPE
+        value: redis
+      
+      # ============================================
+      # API服务配置
+      # ============================================
+      
+      - key: API_HOST
+        value: 0.0.0.0
+      
+      - key: API_PORT
+        value: "8000"
+      
+      - key: CORS_ORIGINS
+        value: "*"
+      
+      # ============================================
+      # 日志配置
+      # ============================================
+      
+      - key: TRADINGAGENTS_LOG_LEVEL
+        value: WARNING  # 减少日志输出，节省资源
+      
+      - key: TRADINGAGENTS_LOG_DIR
+        value: /app/logs
+      
+      - key: TRADINGAGENTS_LOG_FILE
+        value: /app/logs/tradingagents.log
+      
+      # ============================================
+      # Docker环境标识
+      # ============================================
+      
+      - key: DOCKER_CONTAINER
+        value: "true"
+      
+      - key: TZ
+        value: Asia/Shanghai
+      
+      # ============================================
+      # Python配置
+      # ============================================
+      
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      
+      # ============================================
+      # 其他LLM提供商（可选）
+      # ============================================
+      
+      # Google AI
+      - key: GOOGLE_API_KEY
+        sync: false
+      
+      # Anthropic Claude
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      
+      # DeepSeek
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      
+      # 阿里云通义千问
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      
+      # AkShare数据源（可选）
+      - key: AKSHARE_ENABLED
+        value: "true"
+      
+      # BaoStock数据源（可选）
+      - key: BAOSTOCK_ENABLED
+        value: "true"
+

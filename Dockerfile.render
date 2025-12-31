@@ -1,0 +1,204 @@
+# Render平台单体Docker部署文件
+# TradingAgents-CN v1.0.0-preview
+# 整合前端、后端、MongoDB、Redis到单个容器
+# 适用于Render免费套餐（512MB RAM限制）
+
+# ============================================
+# 阶段1: 前端构建
+# ============================================
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+# 启用Corepack并使用Yarn 1.22.22
+RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+
+# 复制前端依赖配置
+COPY frontend/package.json frontend/yarn.lock frontend/.yarnrc ./
+
+# 安装前端依赖（增加超时时间）
+RUN yarn install --frozen-lockfile --production=false --network-timeout 300000
+
+# 复制前端源代码
+COPY frontend/. ./
+
+# 复制静态资源和文档
+COPY assets /app/frontend/public/assets
+COPY docs /app/docs
+
+# 构建生产版本（移除sourcemap减小体积）
+ENV NODE_ENV=production
+RUN yarn vite build
+
+# ============================================
+# 阶段2: 运行时环境（单体容器）
+# ============================================
+FROM python:3.10-slim-bookworm
+
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TZ=Asia/Shanghai \
+    DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# ============================================
+# 安装系统依赖和服务组件
+# ============================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # 基础工具
+    ca-certificates \
+    curl \
+    wget \
+    gnupg \
+    procps \
+    # MongoDB 4.4
+    mongodb \
+    # Redis 7
+    redis-server \
+    # Nginx
+    nginx \
+    # PDF生成依赖
+    fontconfig \
+    fonts-noto-cjk \
+    xvfb \
+    # 清理缓存
+    && rm -rf /var/lib/apt/lists/*
+
+# 下载并安装pandoc（文档转换）
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        PANDOC_ARCH="arm64"; \
+    else \
+        PANDOC_ARCH="amd64"; \
+    fi && \
+    wget -q https://github.com/jgm/pandoc/releases/download/3.8.2.1/pandoc-3.8.2.1-1-${PANDOC_ARCH}.deb && \
+    dpkg -i pandoc-3.8.2.1-1-${PANDOC_ARCH}.deb && \
+    rm pandoc-3.8.2.1-1-${PANDOC_ARCH}.deb
+
+# 下载并安装wkhtmltopdf（PDF生成）
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        WKHTMLTOPDF_ARCH="arm64"; \
+    else \
+        WKHTMLTOPDF_ARCH="amd64"; \
+    fi && \
+    wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.bookworm_${WKHTMLTOPDF_ARCH}.deb && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ./wkhtmltox_0.12.6.1-3.bookworm_${WKHTMLTOPDF_ARCH}.deb && \
+    rm wkhtmltox_0.12.6.1-3.bookworm_${WKHTMLTOPDF_ARCH}.deb && \
+    rm -rf /var/lib/apt/lists/*
+
+# 更新字体缓存
+RUN fc-cache -fv
+
+# ============================================
+# 创建必需的目录
+# ============================================
+RUN mkdir -p /app/logs /app/data /app/config \
+    /data/db /data/redis \
+    /var/log/mongodb /var/log/redis \
+    /run/mongodb
+
+# ============================================
+# 安装Python依赖
+# ============================================
+# 复制pyproject.toml和README.md
+COPY pyproject.toml README.md ./
+
+# 安装Python依赖（使用清华镜像加速）
+RUN pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install --prefer-binary . -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install --prefer-binary pdfkit -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# ============================================
+# 复制后端代码
+# ============================================
+COPY app ./app
+COPY tradingagents ./tradingagents
+COPY config ./config
+COPY scripts ./scripts
+COPY docs ./docs
+COPY install ./install
+
+# ============================================
+# 复制前端构建产物
+# ============================================
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+
+# ============================================
+# 配置Nginx
+# ============================================
+COPY nginx/nginx.render.conf /etc/nginx/sites-available/default
+RUN rm -f /etc/nginx/sites-enabled/default && \
+    ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+
+# ============================================
+# 配置MongoDB（轻量化）
+# ============================================
+RUN mkdir -p /etc/mongodb && \
+    echo "# MongoDB轻量化配置（Render免费套餐优化）" > /etc/mongodb/mongod.conf && \
+    echo "storage:" >> /etc/mongodb/mongod.conf && \
+    echo "  dbPath: /data/db" >> /etc/mongodb/mongod.conf && \
+    echo "  journal:" >> /etc/mongodb/mongod.conf && \
+    echo "    enabled: false  # 禁用journal减少内存占用" >> /etc/mongodb/mongod.conf && \
+    echo "  engine: wiredTiger" >> /etc/mongodb/mongod.conf && \
+    echo "  wiredTiger:" >> /etc/mongodb/mongod.conf && \
+    echo "    engineConfig:" >> /etc/mongodb/mongod.conf && \
+    echo "      cacheSizeGB: 0.125  # 限制缓存为128MB" >> /etc/mongodb/mongod.conf && \
+    echo "systemLog:" >> /etc/mongodb/mongod.conf && \
+    echo "  destination: file" >> /etc/mongodb/mongod.conf && \
+    echo "  path: /var/log/mongodb/mongod.log" >> /etc/mongodb/mongod.conf && \
+    echo "  logAppend: true" >> /etc/mongodb/mongod.conf && \
+    echo "  verbosity: 0  # 减少日志输出" >> /etc/mongodb/mongod.conf && \
+    echo "net:" >> /etc/mongodb/mongod.conf && \
+    echo "  port: 27017" >> /etc/mongodb/mongod.conf && \
+    echo "  bindIp: 127.0.0.1" >> /etc/mongodb/mongod.conf && \
+    echo "processManagement:" >> /etc/mongodb/mongod.conf && \
+    echo "  fork: false  # 前台运行" >> /etc/mongodb/mongod.conf
+
+# ============================================
+# 配置Redis（轻量化）
+# ============================================
+RUN mkdir -p /etc/redis && \
+    echo "# Redis轻量化配置（Render免费套餐优化）" > /etc/redis/redis.conf && \
+    echo "bind 127.0.0.1" >> /etc/redis/redis.conf && \
+    echo "port 6379" >> /etc/redis/redis.conf && \
+    echo "daemonize no  # 前台运行" >> /etc/redis/redis.conf && \
+    echo "dir /data/redis" >> /etc/redis/redis.conf && \
+    echo "logfile /var/log/redis/redis.log" >> /etc/redis/redis.conf && \
+    echo "loglevel warning  # 减少日志输出" >> /etc/redis/redis.conf && \
+    echo "maxmemory 100mb  # 限制最大内存100MB" >> /etc/redis/redis.conf && \
+    echo "maxmemory-policy allkeys-lru  # LRU淘汰策略" >> /etc/redis/redis.conf && \
+    echo "save \"\"  # 禁用RDB持久化（测试环境）" >> /etc/redis/redis.conf && \
+    echo "appendonly no  # 禁用AOF持久化（测试环境）" >> /etc/redis/redis.conf
+
+# ============================================
+# 复制MongoDB初始化脚本
+# ============================================
+COPY scripts/mongo-init.js /app/scripts/mongo-init.js
+
+# ============================================
+# 复制启动脚本
+# ============================================
+COPY docker-entrypoint.render.sh /docker-entrypoint.render.sh
+RUN chmod +x /docker-entrypoint.render.sh
+
+# ============================================
+# 暴露端口
+# ============================================
+# Nginx统一入口（前端+后端API）
+EXPOSE 80
+
+# ============================================
+# 健康检查
+# ============================================
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+# ============================================
+# 启动容器
+# ============================================
+CMD ["/docker-entrypoint.render.sh"]
+
