@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     ALLOWED_HOSTS: List[str] = Field(default_factory=lambda: ["*"])
 
     # MongoDB配置
+    # 优先使用完整的MongoDB URL（支持外部数据库如MongoDB Atlas）
+    TRADINGAGENTS_MONGODB_URL: str = Field(default="")
     MONGODB_HOST: str = Field(default="localhost")
     MONGODB_PORT: int = Field(default=27017)
     MONGODB_USERNAME: str = Field(default="")
@@ -36,14 +38,18 @@ class Settings(BaseSettings):
     MONGODB_AUTH_SOURCE: str = Field(default="admin")
     MONGO_MAX_CONNECTIONS: int = Field(default=100)
     MONGO_MIN_CONNECTIONS: int = Field(default=10)
-    # MongoDB超时参数（毫秒）- 用于处理大量历史数据
-    MONGO_CONNECT_TIMEOUT_MS: int = Field(default=30000)  # 连接超时：30秒（原为10秒）
-    MONGO_SOCKET_TIMEOUT_MS: int = Field(default=60000)   # 套接字超时：60秒（原为20秒）
-    MONGO_SERVER_SELECTION_TIMEOUT_MS: int = Field(default=5000)  # 服务器选择超时：5秒
+    # MongoDB超时参数（毫秒）- 增加Render外部数据库连接超时
+    MONGO_CONNECT_TIMEOUT_MS: int = Field(default=60000)  # 连接超时：60秒
+    MONGO_SOCKET_TIMEOUT_MS: int = Field(default=90000)   # 套接字超时：90秒
+    MONGO_SERVER_SELECTION_TIMEOUT_MS: int = Field(default=30000)  # 服务器选择超时：30秒
 
     @property
     def MONGO_URI(self) -> str:
-        """构建MongoDB URI"""
+        """构建MongoDB URI - 优先使用完整URL环境变量"""
+        # 优先使用 TRADINGAGENTS_MONGODB_URL（支持MongoDB Atlas等外部服务）
+        if self.TRADINGAGENTS_MONGODB_URL:
+            return self.TRADINGAGENTS_MONGODB_URL
+        # 兼容旧版分散配置
         if self.MONGODB_USERNAME and self.MONGODB_PASSWORD:
             return f"mongodb://{self.MONGODB_USERNAME}:{self.MONGODB_PASSWORD}@{self.MONGODB_HOST}:{self.MONGODB_PORT}/{self.MONGODB_DATABASE}?authSource={self.MONGODB_AUTH_SOURCE}"
         else:
@@ -55,6 +61,8 @@ class Settings(BaseSettings):
         return self.MONGODB_DATABASE
 
     # Redis配置
+    # 优先使用完整的Redis URL（支持外部Redis如Upstash）
+    TRADINGAGENTS_REDIS_URL: str = Field(default="")
     REDIS_HOST: str = Field(default="localhost")
     REDIS_PORT: int = Field(default=6379)
     REDIS_PASSWORD: str = Field(default="")
@@ -64,7 +72,11 @@ class Settings(BaseSettings):
 
     @property
     def REDIS_URL(self) -> str:
-        """构建Redis URL"""
+        """构建Redis URL - 优先使用完整URL环境变量"""
+        # 优先使用 TRADINGAGENTS_REDIS_URL（支持Upstash等外部服务）
+        if self.TRADINGAGENTS_REDIS_URL:
+            return self.TRADINGAGENTS_REDIS_URL
+        # 兼容旧版分散配置
         if self.REDIS_PASSWORD:
             return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         else:

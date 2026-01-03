@@ -135,20 +135,28 @@ python -m uvicorn app.main:app \
 BACKEND_PID=$!
 log_info "FastAPI进程ID: $BACKEND_PID"
 
-# 等待后端启动（最多60秒）
+# 等待后端启动（最多90秒，增加容错时间）
 log_info "等待FastAPI后端启动..."
-for i in {1..60}; do
+BACKEND_READY=false
+for i in {1..90}; do
     if curl -f http://localhost:8000/api/health > /dev/null 2>&1; then
         log_success "FastAPI后端启动成功"
+        BACKEND_READY=true
         break
     fi
-    if [ $i -eq 60 ]; then
-        log_error "FastAPI后端启动超时！"
-        log_error "请检查环境变量配置和外部数据库连接"
-        exit 1
+    # 每10秒打印一次等待信息
+    if [ $((i % 10)) -eq 0 ]; then
+        log_info "仍在等待后端启动... ($i/90秒)"
     fi
     sleep 1
 done
+
+# 如果后端未就绪，发出警告但继续启动Nginx
+if [ "$BACKEND_READY" = false ]; then
+    log_warning "FastAPI后端健康检查超时，但将继续启动Nginx"
+    log_warning "应用可能需要额外时间建立数据库连接"
+    log_warning "请在浏览器访问/api/health检查后端状态"
+fi
 
 # ============================================
 # 5. 启动Nginx

@@ -68,8 +68,9 @@ class DatabaseManager:
 
         except Exception as e:
             logger.error(f"❌ MongoDB连接失败: {e}")
+            logger.warning("⚠️ 应用将在无MongoDB的模式下启动，部分功能可能不可用")
             self._mongo_healthy = False
-            raise
+            # 不抛出异常，允许应用继续启动
 
     async def init_redis(self):
         """初始化Redis连接"""
@@ -98,8 +99,9 @@ class DatabaseManager:
 
         except Exception as e:
             logger.error(f"❌ Redis连接失败: {e}")
+            logger.warning("⚠️ 应用将在无Redis的模式下启动，缓存功能将不可用")
             self._redis_healthy = False
-            raise
+            # 不抛出异常，允许应用继续启动
 
     async def close_connections(self):
         """关闭所有数据库连接"""
@@ -208,7 +210,8 @@ async def init_database():
 
     except Exception as e:
         logger.error(f"💥 数据库初始化失败: {e}")
-        raise
+        logger.warning("⚠️ 应用将在降级模式下运行，部分功能可能不可用")
+        # 不抛出异常，允许应用继续启动
 
 
 async def init_database_views_and_indexes():
