@@ -229,6 +229,19 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    # 初始化默认管理员用户（如果不存在）
+    try:
+        from app.services.user_service import user_service
+        admin_user = await user_service.create_admin_user(
+            username="admin",
+            password="admin123",
+            email="admin@tradingagents.cn"
+        )
+        if admin_user:
+            logger.info("✅ 默认管理员账户已就绪")
+    except Exception as e:
+        logger.warning(f"⚠️ 初始化管理员账户失败: {e}")
+
     #  配置桥接：将统一配置写入环境变量，供 TradingAgents 核心库使用
     try:
         from app.core.config_bridge import bridge_config_to_env
