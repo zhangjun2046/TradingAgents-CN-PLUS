@@ -122,6 +122,15 @@ class ChatDeepSeek(ChatOpenAI):
         session_id = kwargs.pop('session_id', None)
         analysis_type = kwargs.pop('analysis_type', None)
 
+        # 关闭 DeepSeek V4 系列的思考模式（thinking mode），避免 reasoning_content
+        # 在多轮工具调用中必须回传到 API 的限制。LangChain 的 ChatOpenAI 不识别
+        # reasoning_content 字段，会在序列化 AIMessage 时丢失，导致 V4 接口返回 400：
+        # "The `reasoning_content` in the thinking mode must be passed back to the API."
+        # 参考：https://api-docs.deepseek.com/guides/thinking_mode
+        extra_body = kwargs.pop("extra_body", None) or {}
+        extra_body.setdefault("thinking", {"type": "disabled"})
+        kwargs["extra_body"] = extra_body
+
         try:
             # 调用父类方法生成响应
             result = super()._generate(messages, stop, run_manager, **kwargs)
