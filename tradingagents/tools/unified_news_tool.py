@@ -279,6 +279,121 @@ class UnifiedNewsAnalyzer:
             logger.error(traceback.format_exc())
             return False
 
+    def _sync_hk_news_from_akshare(self, stock_code: str, max_news: int = 10) -> bool:
+        """
+        从AKShare同步港股新闻到数据库（同步方法）
+
+        与 _sync_news_from_akshare 的关键区别：
+        - 直接调用 ak.stock_news_em(symbol=clean_code)，不经过 AKShareProvider 内部的
+          symbol.zfill(6) 逻辑（zfill 会把港股 5 位代码 06030 错误填充成 006030，
+          导致东方财富无法正确匹配港股新闻）。
+        - 保存时 market="HK"，与 A 股的 "CN" 区分，便于后续按市场维度查询/统计。
+        - 单线程同步执行，不需要新事件循环（不调异步 provider）。
+
+        Args:
+            stock_code: 港股代码（如 06030.HK 或 06030）
+            max_news: 最大新闻数量
+
+        Returns:
+            bool: 是否成功同步并保存了至少一条新闻
+        """
+        try:
+            max_news = int(max_news)
+
+            # 标准化港股代码：仅去除 .HK 后缀，保留原始位数（5 位或 4 位）
+            clean_code = stock_code.replace('.HK', '').replace('.hk', '').strip()
+            if not clean_code:
+                logger.warning(f"[统一新闻工具] 港股代码标准化后为空: {stock_code}")
+                return False
+
+            logger.info(f"[统一新闻工具] 🔄 开始同步港股 {clean_code} 的新闻（绕过 zfill）...")
+
+            try:
+                import akshare as ak
+            except ImportError:
+                logger.error(f"[统一新闻工具] ❌ akshare 未安装，无法同步港股新闻")
+                return False
+
+            # 重试机制：JSON 解码错误或网络抖动时指数退避
+            max_retries = 3
+            retry_delay = 1
+            news_df = None
+
+            import time
+            for attempt in range(max_retries):
+                try:
+                    news_df = ak.stock_news_em(symbol=clean_code)
+                    break
+                except Exception as inner_e:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"[统一新闻工具] ⚠️ 港股 {clean_code} 第{attempt + 1}次获取新闻失败: "
+                            f"{inner_e}，{retry_delay}秒后重试..."
+                        )
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    else:
+                        logger.error(f"[统一新闻工具] ❌ 港股 {clean_code} 获取新闻失败: {inner_e}")
+                        return False
+
+            if news_df is None or news_df.empty:
+                logger.warning(f"[统一新闻工具] ⚠️ AKShare 未返回港股 {clean_code} 的新闻数据")
+                return False
+
+            logger.info(f"[统一新闻工具] 📥 AKShare 返回 {len(news_df)} 条港股原始新闻数据")
+
+            # 转换为标准新闻数据结构（字段对齐 _standardize_news_data 的预期）
+            news_data = []
+            for _, row in news_df.head(max_news).iterrows():
+                title = str(row.get('新闻标题', '') or row.get('标题', '')).strip()
+                content = str(row.get('新闻内容', '') or row.get('内容', '')).strip()
+                url = str(row.get('新闻链接', '') or row.get('链接', '')).strip()
+                publish_time = str(row.get('发布时间', '') or row.get('时间', '')).strip()
+                source = str(row.get('文章来源', '') or row.get('来源', '') or '东方财富').strip()
+
+                # 跳过空标题或明显的噪声短标题（< 5 字符基本无信息量）
+                if not title or len(title) < 5:
+                    continue
+
+                news_data.append({
+                    'symbol': clean_code,
+                    'title': title,
+                    'content': content,
+                    'summary': content[:200] if content else '',
+                    'url': url,
+                    'source': source,
+                    'publish_time': publish_time,
+                    'category': 'general',
+                    'sentiment': 'neutral',
+                    'sentiment_score': 0.0,
+                    'keywords': [],
+                    'importance': 'medium',
+                })
+
+            if not news_data:
+                logger.warning(
+                    f"[统一新闻工具] ⚠️ 港股 {clean_code} 转换后无有效新闻（标题全部过短或为空）"
+                )
+                return False
+
+            # 保存到数据库
+            from app.services.news_data_service import NewsDataService
+            news_service = NewsDataService()
+            saved_count = news_service.save_news_data_sync(
+                news_data=news_data,
+                data_source="akshare",
+                market="HK"
+            )
+
+            logger.info(f"[统一新闻工具] ✅ 港股新闻同步成功: {saved_count} 条")
+            return saved_count > 0
+
+        except Exception as e:
+            logger.error(f"[统一新闻工具] ❌ 同步港股新闻失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+
     def _get_a_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
         """获取A股新闻"""
         logger.info(f"[统一新闻工具] 获取A股 {stock_code} 新闻")
@@ -365,49 +480,91 @@ class UnifiedNewsAnalyzer:
         return "❌ 无法获取A股新闻数据，所有新闻源均不可用"
     
     def _get_hk_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
-        """获取港股新闻"""
+        """获取港股新闻
+
+        优先级（与 A 股保持一致的"数据库缓存 + AKShare 同步"骨架，但保留独立分支
+        便于针对港股特性单独扩展，如港股 5 位代码、不同新闻源覆盖差异等）：
+            优先级 0:   MongoDB 数据库缓存（去除 .HK 后缀按 symbol 查询）
+            优先级 0.5: AKShare 同步港股新闻到数据库（_sync_hk_news_from_akshare）
+            优先级 1:   东方财富实时新闻聚合器（含港股回退分支）
+            优先级 2:   Google 新闻（中文 query）
+            优先级 3:   OpenAI 全球新闻
+        """
         logger.info(f"[统一新闻工具] 获取港股 {stock_code} 新闻")
-        
-        # 获取当前日期
+
         curr_date = datetime.now().strftime("%Y-%m-%d")
-        
-        # 优先级1: Google新闻（港股搜索）
+
+        # 优先级0: 从数据库获取新闻（最高优先级，与 A 股保持一致）
         try:
-            if hasattr(self.toolkit, 'get_google_news'):
-                logger.info(f"[统一新闻工具] 尝试Google港股新闻...")
-                query = f"{stock_code} 港股 香港股票 新闻"
-                # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
-                result = self.toolkit.get_google_news.invoke({"query": query, "curr_date": curr_date})
-                if result and len(result.strip()) > 50:
-                    logger.info(f"[统一新闻工具] ✅ Google港股新闻获取成功: {len(result)} 字符")
-                    return self._format_news_result(result, "Google港股新闻", model_info)
+            logger.info(f"[统一新闻工具] 🔍 优先从数据库获取港股 {stock_code} 的新闻...")
+            db_news = self._get_news_from_database(stock_code, max_news)
+            if db_news:
+                logger.info(f"[统一新闻工具] ✅ 港股数据库新闻获取成功: {len(db_news)} 字符")
+                return self._format_news_result(db_news, "数据库缓存(港股)", model_info)
+            else:
+                logger.info(f"[统一新闻工具] ⚠️ 数据库中没有港股 {stock_code} 的新闻，尝试同步...")
+
+                # 数据库没有数据时，调用同步服务同步新闻（港股专用同步方法，不走 zfill）
+                try:
+                    logger.info(f"[统一新闻工具] 📡 调用 AKShare 同步港股 {stock_code} 的新闻...")
+                    synced_news = self._sync_hk_news_from_akshare(stock_code, max_news)
+
+                    if synced_news:
+                        logger.info(f"[统一新闻工具] ✅ 港股新闻同步成功，重新从数据库获取...")
+                        db_news = self._get_news_from_database(stock_code, max_news)
+                        if db_news:
+                            logger.info(
+                                f"[统一新闻工具] ✅ 港股同步后数据库新闻获取成功: {len(db_news)} 字符"
+                            )
+                            return self._format_news_result(db_news, "数据库缓存(新同步-港股)", model_info)
+                    else:
+                        logger.warning(f"[统一新闻工具] ⚠️ AKShare 港股新闻同步未返回数据")
+
+                except Exception as sync_error:
+                    logger.warning(f"[统一新闻工具] ⚠️ AKShare 港股新闻同步调用失败: {sync_error}")
+
+                logger.info(f"[统一新闻工具] ⚠️ 港股同步后仍无数据，尝试其他数据源...")
         except Exception as e:
-            logger.warning(f"[统一新闻工具] Google港股新闻获取失败: {e}")
-        
-        # 优先级2: OpenAI全球新闻
-        try:
-            if hasattr(self.toolkit, 'get_global_news_openai'):
-                logger.info(f"[统一新闻工具] 尝试OpenAI港股新闻...")
-                # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
-                result = self.toolkit.get_global_news_openai.invoke({"curr_date": curr_date})
-                if result and len(result.strip()) > 50:
-                    logger.info(f"[统一新闻工具] ✅ OpenAI港股新闻获取成功: {len(result)} 字符")
-                    return self._format_news_result(result, "OpenAI港股新闻", model_info)
-        except Exception as e:
-            logger.warning(f"[统一新闻工具] OpenAI港股新闻获取失败: {e}")
-        
-        # 优先级3: 实时新闻（如果支持港股）
+            logger.warning(f"[统一新闻工具] 港股数据库新闻获取失败: {e}")
+
+        # 优先级1: 实时新闻聚合器（内部含港股 → 东方财富回退分支）
         try:
             if hasattr(self.toolkit, 'get_realtime_stock_news'):
-                logger.info(f"[统一新闻工具] 尝试实时港股新闻...")
-                # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
-                result = self.toolkit.get_realtime_stock_news.invoke({"ticker": stock_code, "curr_date": curr_date})
+                logger.info(f"[统一新闻工具] 尝试实时港股新闻聚合器...")
+                result = self.toolkit.get_realtime_stock_news.invoke(
+                    {"ticker": stock_code, "curr_date": curr_date}
+                )
                 if result and len(result.strip()) > 100:
                     logger.info(f"[统一新闻工具] ✅ 实时港股新闻获取成功: {len(result)} 字符")
                     return self._format_news_result(result, "实时港股新闻", model_info)
+                else:
+                    logger.warning(f"[统一新闻工具] ⚠️ 实时港股新闻内容过短或为空")
         except Exception as e:
             logger.warning(f"[统一新闻工具] 实时港股新闻获取失败: {e}")
-        
+
+        # 优先级2: Google 新闻（备份，在代理可用时才有效）
+        try:
+            if hasattr(self.toolkit, 'get_google_news'):
+                logger.info(f"[统一新闻工具] 尝试 Google 港股新闻...")
+                query = f"{stock_code} 港股 香港股票 新闻"
+                result = self.toolkit.get_google_news.invoke({"query": query, "curr_date": curr_date})
+                if result and len(result.strip()) > 50:
+                    logger.info(f"[统一新闻工具] ✅ Google 港股新闻获取成功: {len(result)} 字符")
+                    return self._format_news_result(result, "Google港股新闻", model_info)
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] Google 港股新闻获取失败: {e}")
+
+        # 优先级3: OpenAI 全球新闻（备份，依赖有效的 OPENAI_API_KEY 与代理）
+        try:
+            if hasattr(self.toolkit, 'get_global_news_openai'):
+                logger.info(f"[统一新闻工具] 尝试 OpenAI 港股新闻...")
+                result = self.toolkit.get_global_news_openai.invoke({"curr_date": curr_date})
+                if result and len(result.strip()) > 50:
+                    logger.info(f"[统一新闻工具] ✅ OpenAI 港股新闻获取成功: {len(result)} 字符")
+                    return self._format_news_result(result, "OpenAI港股新闻", model_info)
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] OpenAI 港股新闻获取失败: {e}")
+
         return "❌ 无法获取港股新闻数据，所有新闻源均不可用"
     
     def _get_us_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
@@ -578,8 +735,8 @@ def create_unified_news_tool(toolkit):
 功能:
 - 自动识别股票类型（A股/港股/美股）
 - 根据股票类型选择最佳新闻源
-- A股: 优先东方财富 -> Google中文 -> OpenAI
-- 港股: 优先Google -> OpenAI -> 实时新闻
+- A股: 数据库缓存 -> AKShare(东方财富)同步 -> 东方财富实时新闻 -> Google中文 -> OpenAI
+- 港股: 数据库缓存 -> AKShare(东方财富)同步 -> 实时新闻聚合器 -> Google中文 -> OpenAI
 - 美股: 优先OpenAI -> Google英文 -> FinnHub
 - 返回格式化的新闻内容
 - 支持Google模型的特殊长度控制
