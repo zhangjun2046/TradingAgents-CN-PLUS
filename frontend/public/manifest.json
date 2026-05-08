@@ -1,16 +1,96 @@
 {
-  "name": "TradingAgents-CN",
+  "name": "TradingAgents-CN - 多智能体股票分析学习平台",
   "short_name": "TradingAgents",
-  "description": "多智能体股票分析学习平台",
+  "description": "现代化的多智能体股票分析学习平台，支持A股、美股、港股分析",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#ffffff",
   "theme_color": "#409EFF",
+  "categories": ["finance", "business", "productivity"],
+  "lang": "zh-CN",
+  "dir": "ltr",
   "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/logo.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "单股分析",
+      "short_name": "分析",
+      "description": "快速进入单股分析页面",
+      "url": "/analysis/single",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "分析历史",
+      "short_name": "历史",
+      "description": "查看分析历史记录",
+      "url": "/analysis/history",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "批量分析",
+      "short_name": "批量",
+      "description": "批量分析多只股票",
+      "url": "/analysis/batch",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "系统设置",
+      "short_name": "设置",
+      "description": "配置系统参数",
+      "url": "/settings",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/assets/schema.png",
+      "sizes": "800x600",
+      "type": "image/png",
+      "form_factor": "wide"
     }
   ]
 }

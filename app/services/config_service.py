@@ -3567,17 +3567,26 @@ class ConfigService:
                 "messages": [
                     {"role": "user", "content": "你好，请简单介绍一下你自己。"}
                 ],
-                "max_tokens": 50,
-                "temperature": 0.1
+                "max_tokens": 200,
+                "temperature": 0.1,
+                # V4 系列默认开启思考模式，测试时关闭以避免 token 被推理耗尽
+                "thinking": {"type": "disabled"}
             }
 
-            response = requests.post(url, json=data, headers=headers, timeout=10)
+            # V4-Pro 首次调用可能较慢，超时略放宽
+            response = requests.post(url, json=data, headers=headers, timeout=60)
 
             if response.status_code == 200:
                 result = response.json()
                 if "choices" in result and len(result["choices"]) > 0:
-                    content = result["choices"][0]["message"]["content"]
-                    if content and len(content.strip()) > 0:
+                    msg_obj = result["choices"][0].get("message", {}) 
+                    content = (msg_obj.get("content") or msg_obj.get("reasoning_content") or "")
+                    if isinstance(content, list):
+                        # 多段/多模态时合并为字符串便于判断
+                        content = "".join(
+                            (p.get("text", "") if isinstance(p, dict) else str(p)) for p in content
+                        )
+                    if content and len(str(content).strip()) > 0:
                         return {
                             "success": True,
                             "message": f"{display_name} API连接测试成功"
@@ -3585,7 +3594,7 @@ class ConfigService:
                     else:
                         return {
                             "success": False,
-                            "message": f"{display_name} API响应为空"
+                            "message": f"{display_name} API响应为空（请确认模型名与账户权限；或查看后端日志 raw_message）"
                         }
                 else:
                     return {
@@ -3593,9 +3602,10 @@ class ConfigService:
                         "message": f"{display_name} API响应格式异常"
                     }
             else:
+                err_snip = (response.text or "")[:500]
                 return {
                     "success": False,
-                    "message": f"{display_name} API测试失败: HTTP {response.status_code}"
+                    "message": f"{display_name} API测试失败: HTTP {response.status_code} {err_snip}"
                 }
 
         except Exception as e:

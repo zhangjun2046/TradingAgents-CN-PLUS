@@ -3,6 +3,9 @@
     <!-- 网络状态指示器 -->
     <NetworkStatus />
 
+    <!-- PWA 安装提示 -->
+    <PwaInstallPrompt />
+
     <!-- 主要内容区域 -->
     <router-view v-slot="{ Component, route }">
       <transition
@@ -28,6 +31,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import NetworkStatus from '@/components/NetworkStatus.vue'
+import PwaInstallPrompt from '@/components/PwaInstallPrompt.vue'
 import axios from 'axios'
 import { configApi } from '@/api/config'
 

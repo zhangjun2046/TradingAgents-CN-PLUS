@@ -19,7 +19,7 @@
     <div class="analysis-container">
       <el-row :gutter="24">
         <!-- 左侧：基础配置 -->
-        <el-col :span="18">
+        <el-col :xs="24" :sm="24" :md="18" :lg="18" :xl="18">
           <el-card class="main-form-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -33,7 +33,7 @@
               <div class="form-section">
                 <h4 class="section-title">📊 股票信息</h4>
                 <el-row :gutter="16">
-                  <el-col :span="12">
+                  <el-col :xs="24" :sm="24" :md="12" :lg="12">
                     <el-form-item label="股票代码" required>
                       <el-input
                         v-model="analysisForm.stockCode"
@@ -59,7 +59,7 @@
                       </div>
                     </el-form-item>
                   </el-col>
-                  <el-col :span="12">
+                  <el-col :xs="24" :sm="24" :md="12" :lg="12">
                     <el-form-item label="市场类型">
                       <el-select
                         v-model="analysisForm.market"
@@ -346,7 +346,7 @@
         </el-col>
 
         <!-- 右侧：高级配置 -->
-        <el-col :span="6">
+        <el-col :xs="24" :sm="24" :md="6" :lg="6" :xl="6">
           <el-card class="config-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -688,7 +688,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed, h } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, h, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, ElInputNumber } from 'element-plus'
 import {
@@ -1754,12 +1754,14 @@ const goSimOrder = async () => {
   }
 }
 
-// 组件销毁时清理定时器
+// 组件销毁时清理定时器和监听器
 onUnmounted(() => {
   if (pollingTimer.value) {
     clearInterval(pollingTimer.value)
     pollingTimer.value = null
   }
+  
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 // 页面可见性变化时的处理
@@ -1786,9 +1788,6 @@ const handleVisibilityChange = () => {
     }
   }
 }
-
-// 监听页面可见性变化
-document.addEventListener('visibilitychange', handleVisibilityChange)
 
 // 获取深度描述
 const getDepthDescription = (depth: number) => {
@@ -2169,7 +2168,6 @@ const applyRecommendedModels = () => {
 }
 
 // 监听分析深度变化
-import { watch } from 'vue'
 watch(() => analysisForm.researchDepth, () => {
   checkModelSuitability()
 })
@@ -2181,6 +2179,9 @@ watch([() => modelSettings.value.quickAnalysisModel, () => modelSettings.value.d
 
 // 页面初始化
 onMounted(async () => {
+  // 注册页面可见性监听器
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  
   initializeModelSettings()
 
   // 🆕 从用户偏好加载默认设置
@@ -3396,6 +3397,374 @@ onMounted(async () => {
     font-size: 14px;
     line-height: 1.6;
     color: #e6a23c;
+  }
+}
+
+/* 移动端响应式样式 */
+@media (max-width: 768px) {
+  .single-analysis {
+    padding: 12px;
+
+    .page-header {
+      margin-bottom: 16px;
+
+      .header-content {
+        padding: 20px 16px;
+        border-radius: 12px;
+      }
+
+      .title-section {
+        .page-title {
+          font-size: 24px !important;
+          
+          .title-icon {
+            margin-right: 8px;
+            font-size: 24px;
+          }
+        }
+
+        .page-description {
+          font-size: 14px;
+        }
+      }
+    }
+
+    .analysis-container {
+      .main-form-card, .config-card {
+        margin-bottom: 16px;
+        border-radius: 12px;
+
+        :deep(.el-card__header) {
+          padding: 16px;
+          border-radius: 12px 12px 0 0;
+
+          .card-header h3 {
+            font-size: 16px;
+          }
+        }
+
+        :deep(.el-card__body) {
+          padding: 16px;
+        }
+      }
+
+      .analysis-form {
+        .form-section {
+          margin-bottom: 24px;
+
+          .section-title {
+            font-size: 15px;
+            margin-bottom: 12px;
+          }
+        }
+
+        // 表单标签宽度调整
+        :deep(.el-form-item__label) {
+          width: 80px !important;
+          font-size: 14px;
+        }
+
+        :deep(.el-form-item__content) {
+          margin-left: 80px !important;
+        }
+
+        // 深度选择器单列布局
+        .depth-selector {
+          grid-template-columns: 1fr;
+          gap: 10px;
+
+          .depth-option {
+            padding: 12px;
+
+            .depth-icon {
+              font-size: 20px;
+              margin-right: 10px;
+            }
+
+            .depth-info {
+              .depth-name {
+                font-size: 14px;
+              }
+
+              .depth-desc {
+                font-size: 11px;
+              }
+
+              .depth-time {
+                font-size: 10px;
+              }
+            }
+          }
+        }
+
+        // 分析师网格单列布局
+        .analysts-grid {
+          grid-template-columns: 1fr;
+          gap: 12px;
+
+          .analyst-card {
+            padding: 12px;
+
+            .analyst-avatar {
+              width: 40px;
+              height: 40px;
+              font-size: 20px;
+            }
+
+            .analyst-content {
+              .analyst-name {
+                font-size: 14px;
+              }
+
+              .analyst-desc {
+                font-size: 12px;
+              }
+            }
+          }
+        }
+
+        // 操作按钮调整
+        .action-buttons {
+          flex-direction: column;
+          gap: 12px !important;
+
+          .large-analysis-btn {
+            width: 100% !important;
+            height: 48px !important;
+            font-size: 16px !important;
+          }
+
+          .submit-btn {
+            width: 100% !important;
+            height: 48px !important;
+            font-size: 15px !important;
+          }
+
+          > div {
+            width: 100%;
+            flex-direction: column;
+            gap: 12px;
+          }
+        }
+      }
+
+      // 高级配置区域
+      .config-card {
+        .config-content {
+          .config-section {
+            margin-bottom: 20px;
+
+            .config-title {
+              font-size: 15px;
+            }
+
+            .model-item {
+              margin-bottom: 12px;
+
+              .model-label {
+                font-size: 13px;
+                margin-bottom: 6px;
+              }
+            }
+
+            .option-item {
+              padding: 10px;
+
+              .option-name {
+                font-size: 14px;
+              }
+
+              .option-desc {
+                font-size: 11px;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 进度卡片
+    .progress-section {
+      .progress-card {
+        :deep(.el-card__header) {
+          padding: 16px;
+        }
+
+        :deep(.el-card__body) {
+          padding: 16px;
+        }
+
+        .progress-content {
+          .overall-progress-info {
+            .progress-stats {
+              flex-wrap: wrap;
+              gap: 12px;
+
+              .stat-item {
+                flex: 1 1 calc(50% - 6px);
+                min-width: 120px;
+
+                .stat-label {
+                  font-size: 11px;
+                }
+
+                .stat-value {
+                  font-size: 13px;
+                }
+              }
+            }
+          }
+
+          .current-task-info {
+            padding: 12px;
+
+            .task-title {
+              font-size: 14px;
+            }
+
+            .task-description {
+              font-size: 13px;
+            }
+          }
+        }
+      }
+    }
+
+    // 结果显示
+    .results-section {
+      margin-top: 16px;
+
+      .results-card {
+        :deep(.el-card__header) {
+          padding: 16px;
+        }
+
+        :deep(.el-card__body) {
+          padding: 16px;
+        }
+
+        .results-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+
+          h3 {
+            font-size: 18px;
+          }
+
+          .result-meta {
+            flex-wrap: wrap;
+            gap: 6px;
+          }
+        }
+
+        .results-content {
+          .report-content-wrapper {
+            padding: 16px;
+
+            .report-content {
+              font-size: 15px;
+
+              h1 { font-size: 20px !important; }
+              h2 { font-size: 18px !important; }
+              h3 { font-size: 16px !important; }
+              h4 { font-size: 15px !important; }
+
+              p {
+                margin: 10px 0 !important;
+              }
+
+              ul, ol {
+                padding-left: 20px !important;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/* 小屏幕设备优化 (≤480px) */
+@media (max-width: 480px) {
+  .single-analysis {
+    padding: 8px;
+
+    .page-header {
+      .header-content {
+        padding: 16px 12px;
+      }
+
+      .title-section {
+        .page-title {
+          font-size: 20px !important;
+        }
+
+        .page-description {
+          font-size: 13px;
+        }
+      }
+    }
+
+    .analysis-container {
+      :deep(.el-row) {
+        margin: 0 !important;
+      }
+
+      :deep(.el-col) {
+        padding: 0 !important;
+      }
+
+      .analysis-form {
+        :deep(.el-form-item__label) {
+          width: 70px !important;
+          font-size: 13px;
+        }
+
+        :deep(.el-form-item__content) {
+          margin-left: 70px !important;
+        }
+
+        .depth-selector {
+          .depth-option {
+            padding: 10px;
+
+            .depth-icon {
+              font-size: 18px;
+              margin-right: 8px;
+            }
+          }
+        }
+
+        .action-buttons {
+          .large-analysis-btn,
+          .submit-btn {
+            height: 44px !important;
+            font-size: 14px !important;
+          }
+        }
+      }
+    }
+  }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+  .single-analysis {
+    .depth-selector .depth-option,
+    .analysts-grid .analyst-card {
+      min-height: 48px;
+      
+      &:active {
+        transform: scale(0.98);
+      }
+    }
+
+    // 按钮触摸优化
+    .el-button {
+      min-height: 44px;
+      padding: 12px 20px;
+    }
   }
 }
 </style>

@@ -18,6 +18,9 @@ import { setupTokenRefreshTimer } from './utils/auth'
 import './styles/index.scss'
 import './styles/dark-theme.scss'
 
+// PWA Service Worker 注册
+import { registerSW } from 'virtual:pwa-register'
+
 // 创建应用实例
 const app = createApp(App)
 
@@ -146,3 +149,35 @@ if (import.meta.env.DEV) {
   console.log('📊 当前环境:', import.meta.env.MODE)
   console.log('🔗 API地址:', import.meta.env.VITE_API_BASE_URL || '/api')
 }
+
+// 注册 PWA Service Worker
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    console.log('🔄 发现新版本，准备更新...')
+    // 自动更新，无需用户确认
+    updateSW(true)
+  },
+  onOfflineReady() {
+    console.log('📱 应用已准备好离线使用')
+    ElMessage({
+      message: '应用已准备好离线使用',
+      type: 'success',
+      duration: 3000
+    })
+  },
+  onRegistered(registration) {
+    console.log('✅ PWA Service Worker 已注册')
+    if (registration) {
+      // 每小时检查一次更新
+      setInterval(() => {
+        registration.update()
+      }, 60 * 60 * 1000)
+    }
+  },
+  onRegisterError(error) {
+    console.error('❌ PWA Service Worker 注册失败:', error)
+  }
+})
+
+console.log('💡 PWA 功能已启用')

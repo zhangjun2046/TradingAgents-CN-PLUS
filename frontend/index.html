@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
     <title>TradingAgents-CN - 多智能体股票分析学习平台</title>
     <meta name="description" content="现代化的多智能体股票分析学习平台，支持A股、美股、港股分析" />
-    <meta name="keywords" content="股票分析,AI分析,多智能体,TradingAgents" />
+    <meta name="keywords" content="股票分析,AI分析,多智能体,TradingAgents,PWA,离线应用" />
     <meta name="author" content="TradingAgents-CN Team" />
     
     <!-- Open Graph / Facebook -->
@@ -14,14 +14,14 @@
     <meta property="og:url" content="https://tradingagents.cn/" />
     <meta property="og:title" content="TradingAgents-CN - 多智能体股票分析学习平台" />
     <meta property="og:description" content="现代化的多智能体股票分析学习平台，支持A股、美股、港股分析" />
-    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image" content="/icon-512.png" />
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
     <meta property="twitter:url" content="https://tradingagents.cn/" />
     <meta property="twitter:title" content="TradingAgents-CN - 多智能体股票分析学习平台" />
     <meta property="twitter:description" content="现代化的多智能体股票分析学习平台，支持A股、美股、港股分析" />
-    <meta property="twitter:image" content="/og-image.png" />
+    <meta property="twitter:image" content="/icon-512.png" />
 
     <!-- 预加载关键资源 -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -30,16 +30,39 @@
     <!-- 字体 -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     
-    <!-- 主题色 -->
-    <meta name="theme-color" content="#409EFF" />
+    <!-- PWA 主题色 - 支持暗色模式 -->
+    <meta name="theme-color" content="#409EFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1d4ed8" media="(prefers-color-scheme: dark)" />
     
-    <!-- PWA -->
+    <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json" />
+    
+    <!-- 移动端 Web App 配置 -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-title" content="TradingAgents" />
+    
+    <!-- iOS Safari PWA 配置 -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="TradingAgents-CN" />
-    <link rel="apple-touch-icon" href="/logo.svg" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TradingAgents" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    
+    <!-- iOS 启动画面 - 可选 -->
+    <link rel="apple-touch-startup-image" href="/icon-512.png" />
+    
+    <!-- Windows 磁贴配置 -->
+    <meta name="msapplication-TileColor" content="#409EFF" />
+    <meta name="msapplication-TileImage" content="/icon-192.png" />
+    <meta name="msapplication-config" content="none" />
+    
+    <!-- 其他 PWA 相关 -->
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="application-name" content="TradingAgents-CN" />
+    
+    <!-- 安全性 -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="referrer" content="no-referrer-when-downgrade" />
   </head>
   <body>
     <div id="app"></div>

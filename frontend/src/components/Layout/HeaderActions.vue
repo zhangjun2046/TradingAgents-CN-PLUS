@@ -100,27 +100,42 @@ function tagType(t: string) { return t === 'analysis' ? 'success' : t === 'alert
 function toLocal(iso: string) { try { return new Date(iso).toLocaleString() } catch { return iso } }
 function go(n: any) { if (n.link) window.open(n.link, '_blank') }
 
+// watch 监听器应该在 setup 函数体内注册，而不是在 onMounted 内部
+watch(drawerVisible, (v) => {
+  if (v) {
+    notifStore.loadList(filter.value)
+    if (timerList) clearInterval(timerList)
+    timerList = setInterval(() => notifStore.loadList(filter.value), 60000)
+  } else if (timerList) {
+    clearInterval(timerList)
+    timerList = null
+  }
+})
+
+watch(filter, () => {
+  if (drawerVisible.value) notifStore.loadList(filter.value)
+})
+
+// token 变化时重连
+watch(() => authStore.token, (newToken) => {
+  console.info('[HeaderActions] Token changed, reconnecting notifications')
+  if (newToken) {
+    notifStore.connect()
+  } else {
+    notifStore.disconnect()
+  }
+})
+
 onMounted(() => {
+  console.info('[HeaderActions] Initializing notification system')
   notifStore.refreshUnreadCount()
-  // 🔥 建立 WebSocket 连接（优先），失败自动降级到 SSE
+  // 🔥 建立 WebSocket 连接（优先），失败自动降级到轮询
   notifStore.connect()
 
-  timerCount = setInterval(() => notifStore.refreshUnreadCount(), 30000)
-  watch(drawerVisible, (v) => {
-    if (v) {
-      notifStore.loadList(filter.value)
-      timerList = setInterval(() => notifStore.loadList(filter.value), 60000)
-    } else if (timerList) {
-      clearInterval(timerList)
-      timerList = null
-    }
-  }, { immediate: true })
-  watch(filter, () => { if (drawerVisible.value) notifStore.loadList(filter.value) })
-
-  // token 变化时重连
-  watch(() => authStore.token, () => {
-    notifStore.connect()
-  })
+  // 每 30 秒刷新一次未读数（作为 WebSocket 的降级策略）
+  timerCount = setInterval(() => {
+    notifStore.refreshUnreadCount()
+  }, 30000)
 })
 
 onUnmounted(() => {
