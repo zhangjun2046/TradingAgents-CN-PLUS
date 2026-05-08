@@ -5,11 +5,12 @@ WebSocket 通知系统
 import asyncio
 import json
 import logging
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException
 from datetime import datetime
 
 from app.services.auth_service import AuthService
+from app.services.websocket_manager import get_websocket_manager
 
 router = APIRouter()
 logger = logging.getLogger("webapi.websocket")
@@ -260,6 +261,68 @@ async def websocket_task_progress_endpoint(
     
     finally:
         logger.info(f"🔌 [WS-Task] 断开连接: task={task_id}")
+
+
+@router.websocket("/ws/task/{task_id}")
+async def websocket_task_progress_singular(
+    websocket: WebSocket,
+    task_id: str,
+    token: Optional[str] = Query(None),
+):
+    """
+    WebSocket 任务进度端点（与前端单股分析页面对齐的别名路由）
+
+    - 前端连接：ws://host/api/ws/task/<task_id>（不带 token）
+    - 复用 app.services.websocket_manager.WebSocketManager，与 MemoryStateManager 推送通道一致
+    - 兼容 /api/analysis/ws/task/{task_id}（analysis 路由器内的同等实现）
+
+    P0 修复点：
+    - 之前前端连此路径时返回 403，因为路径未注册
+    - 这里重新落地为有效路由，并接入与 /api/analysis/ws/task/{task_id} 同源的进度推送管线
+    """
+    ws_manager = get_websocket_manager()
+
+    # token 可选；若提供则做最小化校验，token 缺失或非法时不再 close，仅打印调试日志
+    # 这样可与现有前端（不带 token）保持兼容；后续如需强校验，可在前端补 token 后改为强制校验
+    if token:
+        try:
+            verified = AuthService.verify_token(token)
+            if not verified:
+                logger.warning(f"⚠️ [WS-Task] token 校验失败，但出于兼容性允许连接: task={task_id}")
+        except Exception as token_err:
+            logger.warning(f"⚠️ [WS-Task] token 校验异常: {token_err}")
+
+    try:
+        await ws_manager.connect(websocket, task_id)
+
+        # 发送连接确认（与 analysis 路由保持一致）
+        await websocket.send_text(json.dumps({
+            "type": "connection_established",
+            "task_id": task_id,
+            "message": "WebSocket 连接已建立",
+            "timestamp": datetime.utcnow().isoformat(),
+        }))
+
+        # 保持连接活跃，接收客户端心跳/消息
+        while True:
+            try:
+                data = await websocket.receive_text()
+                logger.debug(f"📡 [WS-Task] 收到客户端消息: task={task_id}, data={data[:100]}")
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                logger.warning(f"⚠️ [WS-Task] 消息处理错误: {e}")
+                break
+
+    except WebSocketDisconnect:
+        logger.info(f"🔌 [WS-Task] 客户端断开连接: {task_id}")
+    except Exception as e:
+        logger.error(f"❌ [WS-Task] 连接错误: task={task_id}, err={e}")
+    finally:
+        try:
+            await ws_manager.disconnect(websocket, task_id)
+        except Exception:
+            pass
 
 
 @router.get("/ws/stats")

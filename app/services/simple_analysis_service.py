@@ -650,25 +650,58 @@ class SimpleAnalysisService:
             logger.warning(f"⚠️ [异步更新] 失败: {e}")
 
     def _resolve_stock_name(self, code: Optional[str]) -> str:
-        """解析股票名称（带缓存）"""
+        """解析股票名称（带缓存）
+
+        ⚠️ 注意：此方法可能产生网络/数据源 I/O，调用耗时不可控（最坏 60-90 秒）。
+        - 不要在 POST 主流程（如 create_analysis_task）中调用本方法
+        - 仅用于历史/列表查询的名称兜底回填
+        - 对于非 A 股代码，不再走 A 股数据源 fallback 链，直接返回占位名称
+        """
         if not code:
             return ""
-        # 命中缓存
         if code in self._stock_name_cache:
             return self._stock_name_cache[code]
-        name = None
-        try:
-            if _get_stock_info_safe:
-                info = _get_stock_info_safe(code)
-                if isinstance(info, dict):
-                    name = info.get("name")
-        except Exception as e:
-            logger.warning(f"⚠️ 获取股票名称失败: {code} - {e}")
+
+        # P0 修复：只为 A 股代码走 _get_stock_info_safe（其内部仅支持 A 股）
+        # 其他市场（港股/美股）的名称由 prepare_stock_data_async 在执行阶段解析后回填
+        market = self._infer_market_type(code)
+        name: Optional[str] = None
+        if market == "A股":
+            try:
+                if _get_stock_info_safe:
+                    info = _get_stock_info_safe(code)
+                    if isinstance(info, dict):
+                        name = info.get("name")
+            except Exception as e:
+                logger.warning(f"⚠️ 获取A股股票名称失败: {code} - {e}")
+        else:
+            logger.debug(f"🔍 [名称解析] 跳过非A股的同步名称解析: {code} (market={market})")
+
         if not name:
             name = f"股票{code}"
-        # 写缓存
         self._stock_name_cache[code] = name
         return name
+
+    @staticmethod
+    def _infer_market_type(code: Optional[str]) -> str:
+        """根据股票代码格式推断市场类型。
+
+        - 6 位纯数字 → A股（含 600/601/603/000/002/300/688 等所有沪深代码）
+        - 4-5 位数字 或 4-5 位数字.HK → 港股
+        - 1-5 位字母 → 美股
+        - 其他 → 未知（保持调用方传入的 market_type）
+        """
+        if not code:
+            return "未知"
+        import re as _re
+        c = code.strip().upper()
+        if _re.match(r'^\d{6}$', c):
+            return "A股"
+        if _re.match(r'^\d{4,5}\.HK$', c) or _re.match(r'^\d{4,5}$', c):
+            return "港股"
+        if _re.match(r'^[A-Z]{1,5}$', c):
+            return "美股"
+        return "未知"
 
     def _enrich_stock_names(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """为任务列表补齐股票名称(就地更新)"""
@@ -732,9 +765,14 @@ class SimpleAnalysisService:
         user_id: str,
         request: SingleAnalysisRequest
     ) -> Dict[str, Any]:
-        """创建分析任务（立即返回，不执行分析）"""
+        """创建分析任务（P0 优化：完全非阻塞，立即返回 task_id）
+
+        ⚠️ 关键优化：
+        - 此方法只做内存登记 + MongoDB 写入，不做任何网络/数据源同步操作
+        - 股票代码合法性 / 名称解析 / 数据准备全部下沉到 execute_analysis_background
+        - 目标：从原本 60-120 秒降到 100ms 内返回，避免用户因为等待超时而重复提交
+        """
         try:
-            # 生成任务ID
             task_id = str(uuid.uuid4())
 
             # 🔧 使用 get_symbol() 方法获取股票代码（兼容 symbol 和 stock_code 字段）
@@ -742,8 +780,15 @@ class SimpleAnalysisService:
             if not stock_code:
                 raise ValueError("股票代码不能为空")
 
+            stock_code = stock_code.strip()
+
             logger.info(f"📝 创建分析任务: {task_id} - {stock_code}")
             logger.info(f"🔍 内存管理器实例ID: {id(self.memory_manager)}")
+
+            # ⚡ P0 关键修复：使用占位名称，不在主流程触发数据源解析
+            # 真正的股票名称会在 execute_analysis_background 的 prepare_stock_data_async 阶段
+            # 由对应市场（A股/港股/美股）的数据源解析后回填到 MongoDB / 内存任务状态
+            placeholder_name = self._build_placeholder_stock_name(stock_code)
 
             # 在内存中创建任务状态
             task_state = await self.memory_manager.create_task(
@@ -751,7 +796,7 @@ class SimpleAnalysisService:
                 user_id=user_id,
                 stock_code=stock_code,
                 parameters=request.parameters.model_dump() if request.parameters else {},
-                stock_name=(self._resolve_stock_name(stock_code) if hasattr(self, '_resolve_stock_name') else None),
+                stock_name=placeholder_name,
             )
 
             logger.info(f"✅ 任务状态已创建: {task_state.task_id}")
@@ -763,10 +808,7 @@ class SimpleAnalysisService:
             else:
                 logger.error(f"❌ 任务创建验证失败: 无法查询到刚创建的任务 {task_id}")
 
-            # 补齐股票名称并写入数据库任务文档的初始记录
-            code = stock_code
-            name = self._resolve_stock_name(code) if hasattr(self, '_resolve_stock_name') else f"股票{code}"
-
+            # 写入 MongoDB 初始记录（仅本地数据库写入，毫秒级，不阻塞）
             try:
                 db = get_mongo_db()
                 result = await db.analysis_tasks.update_one(
@@ -774,9 +816,9 @@ class SimpleAnalysisService:
                     {"$setOnInsert": {
                         "task_id": task_id,
                         "user_id": user_id,
-                        "stock_code": code,
-                        "stock_symbol": code,
-                        "stock_name": name,
+                        "stock_code": stock_code,
+                        "stock_symbol": stock_code,
+                        "stock_name": placeholder_name,
                         "status": "pending",
                         "progress": 0,
                         "created_at": datetime.utcnow(),
@@ -791,8 +833,7 @@ class SimpleAnalysisService:
 
             except Exception as e:
                 logger.error(f"❌ 创建任务时写入MongoDB失败: {e}")
-                # 这里不应该忽略错误，因为没有MongoDB记录会导致状态查询失败
-                # 但为了不影响任务执行，我们记录错误但继续执行
+                # 不阻塞返回；后台任务执行时会再次写入
                 import traceback
                 logger.error(f"❌ MongoDB保存详细错误: {traceback.format_exc()}")
 
@@ -805,6 +846,17 @@ class SimpleAnalysisService:
         except Exception as e:
             logger.error(f"❌ 创建分析任务失败: {e}")
             raise
+
+    @staticmethod
+    def _build_placeholder_stock_name(code: str) -> str:
+        """生成快速占位股票名称，避免在 POST 主线程发起数据源 I/O。
+
+        这里只做轻量字符串处理，绝不能调用任何会发起网络/磁盘 I/O 的函数。
+        真实的股票名称会在 execute_analysis_background 中由对应市场的数据源解析。
+        """
+        if not code:
+            return ""
+        return f"股票{code.strip().upper()}"
 
     async def execute_analysis_background(
         self,
@@ -834,8 +886,21 @@ class SimpleAnalysisService:
             from tradingagents.utils.stock_validator import prepare_stock_data_async
             from datetime import datetime
 
-            # 获取市场类型
-            market_type = request.parameters.market_type if request.parameters else "A股"
+            # 获取市场类型（前端默认值为"A股"）
+            requested_market_type = request.parameters.market_type if request.parameters else "A股"
+
+            # 🔧 P0 修复：根据股票代码自动纠正市场类型，避免港股/美股误走 A 股 fallback 链路
+            # 例如：用户输入 06030（港股），但前端可能默认提交 market_type="A股"
+            # 这里根据代码格式推断真实市场，强制路由到正确的数据源
+            detected_market_type = self._infer_market_type(stock_code)
+            if detected_market_type and detected_market_type != requested_market_type:
+                logger.warning(
+                    f"⚠️ [市场路由纠正] 股票代码 {stock_code} 的格式属于 {detected_market_type}，"
+                    f"但前端提交的 market_type={requested_market_type}，已自动纠正为 {detected_market_type}"
+                )
+                market_type = detected_market_type
+            else:
+                market_type = requested_market_type
 
             # 获取分析日期并转换为字符串格式
             analysis_date = request.parameters.analysis_date if request.parameters else None
@@ -896,6 +961,33 @@ class SimpleAnalysisService:
             logger.info(f"📊 市场类型: {validation_result.market_type}")
             logger.info(f"📈 历史数据: {'有' if validation_result.has_historical_data else '无'}")
             logger.info(f"📋 基本信息: {'有' if validation_result.has_basic_info else '无'}")
+
+            # 🔧 P0 修复：把验证阶段解析出来的真实股票名称回填到内存任务状态 + MongoDB 任务记录
+            # 这样列表/详情页面能尽早显示真实名称，而不是停留在 "股票{code}" 占位符
+            try:
+                resolved_name = (validation_result.stock_name or "").strip()
+                if resolved_name and resolved_name != "未知":
+                    # 内存
+                    in_mem = await self.memory_manager.get_task(task_id)
+                    if in_mem is not None:
+                        in_mem.stock_name = resolved_name
+                    # 名称缓存
+                    self._stock_name_cache[stock_code] = resolved_name
+                    # MongoDB
+                    try:
+                        db = get_mongo_db()
+                        await db.analysis_tasks.update_one(
+                            {"task_id": task_id},
+                            {"$set": {
+                                "stock_name": resolved_name,
+                                "market_type": validation_result.market_type or market_type,
+                                "updated_at": datetime.utcnow(),
+                            }}
+                        )
+                    except Exception as db_err:
+                        logger.warning(f"⚠️ 回填股票名称到MongoDB失败（可忽略）: {db_err}")
+            except Exception as backfill_err:
+                logger.warning(f"⚠️ 回填股票名称失败（可忽略）: {backfill_err}")
 
             # 在线程池中创建Redis进度跟踪器（避免阻塞事件循环）
             def create_progress_tracker():
