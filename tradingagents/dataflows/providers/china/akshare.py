@@ -5,7 +5,7 @@ AKShare统一数据提供器
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 import pandas as pd
 
 from ..base_provider import BaseStockDataProvider
@@ -165,7 +165,39 @@ class AKShareProvider(BaseStockDataProvider):
             logger.error(f"❌ AKShare初始化失败: {e}")
             self.connected = False
 
-    def _get_stock_news_direct(self, symbol: str, limit: int = 10) -> Optional[pd.DataFrame]:
+    def _resolve_news_query(self, symbol: str, market: Optional[str] = None) -> Tuple[str, str]:
+        """
+        按市场生成新闻检索用代码。
+
+        东方财富新闻接口本质是关键词搜索，代码位数错误会直接命中别的证券：
+        港股 01810 若按A股规则补成 001810，会命中基金"中欧潜力价值灵活配置混合A"。
+        因此A股才允许补齐到6位，港股必须保持5位。
+
+        Args:
+            symbol: 原始股票代码
+            market: 市场码 CN/HK/US，为 None 时按代码格式自动推断
+
+        Returns:
+            Tuple[str, str]: (检索用代码, 市场码)
+
+        Raises:
+            ValueError: 市场无法确定，或港股代码被非法补零
+        """
+        from tradingagents.utils.stock_utils import MARKET_HK, detect_market, normalize_symbol
+
+        resolved_market = detect_market(symbol, market)
+        query_symbol = normalize_symbol(symbol, resolved_market)
+
+        if resolved_market == MARKET_HK and len(query_symbol) == 6 and query_symbol.isdigit():
+            raise ValueError(f"港股查询码非法补零: {symbol} -> {query_symbol}")
+
+        self.logger.debug(
+            f"📰 新闻检索代码解析: original={symbol}, market={resolved_market}, query={query_symbol}"
+        )
+        return query_symbol, resolved_market
+
+    def _get_stock_news_direct(self, symbol: str, limit: int = 10,
+                               market: Optional[str] = None) -> Optional[pd.DataFrame]:
         """
         直接调用东方财富网新闻 API（绕过 AKShare）
         使用 curl_cffi 模拟真实浏览器，适用于 Docker 环境
@@ -173,6 +205,7 @@ class AKShareProvider(BaseStockDataProvider):
         Args:
             symbol: 股票代码
             limit: 返回数量限制
+            market: 市场码 CN/HK/US，为 None 时自动推断
 
         Returns:
             新闻 DataFrame 或 None
@@ -183,14 +216,14 @@ class AKShareProvider(BaseStockDataProvider):
             import time
             import os
 
-            # 标准化股票代码
-            symbol_6 = symbol.zfill(6)
+            # 按市场标准化股票代码（港股保持5位，禁止补到6位）
+            query_symbol, _resolved_market = self._resolve_news_query(symbol, market)
 
             # 构建请求参数
             url = "https://search-api-web.eastmoney.com/search/jsonp"
             param = {
                 "uid": "",
-                "keyword": symbol_6,
+                "keyword": query_symbol,
                 "type": ["cmsArticleWebOld"],
                 "client": "web",
                 "clientType": "web",
@@ -1107,13 +1140,15 @@ class AKShareProvider(BaseStockDataProvider):
                 "error": str(e)
             }
 
-    def get_stock_news_sync(self, symbol: str = None, limit: int = 10) -> Optional[pd.DataFrame]:
+    def get_stock_news_sync(self, symbol: str = None, limit: int = 10,
+                            market: Optional[str] = None) -> Optional[pd.DataFrame]:
         """
         获取股票新闻（同步版本，返回原始 DataFrame）
 
         Args:
             symbol: 股票代码，为None时获取市场新闻
             limit: 返回数量限制
+            market: 市场码 CN/HK/US，为 None 时自动推断
 
         Returns:
             新闻 DataFrame 或 None
@@ -1130,8 +1165,8 @@ class AKShareProvider(BaseStockDataProvider):
                 # 获取个股新闻
                 self.logger.debug(f"📰 获取AKShare个股新闻: {symbol}")
 
-                # 标准化股票代码
-                symbol_6 = symbol.zfill(6)
+                # 按市场标准化股票代码（港股保持5位，禁止补到6位）
+                query_symbol, _resolved_market = self._resolve_news_query(symbol, market)
 
                 # 获取东方财富个股新闻，添加重试机制
                 max_retries = 3
@@ -1140,7 +1175,7 @@ class AKShareProvider(BaseStockDataProvider):
 
                 for attempt in range(max_retries):
                     try:
-                        news_df = ak.stock_news_em(symbol=symbol_6)
+                        news_df = ak.stock_news_em(symbol=query_symbol)
                         break  # 成功则跳出重试循环
                     except json.JSONDecodeError as e:
                         if attempt < max_retries - 1:
@@ -1180,13 +1215,15 @@ class AKShareProvider(BaseStockDataProvider):
             self.logger.error(f"❌ AKShare新闻获取失败: {e}")
             return None
 
-    async def get_stock_news(self, symbol: str = None, limit: int = 10) -> Optional[List[Dict[str, Any]]]:
+    async def get_stock_news(self, symbol: str = None, limit: int = 10,
+                             market: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
         """
         获取股票新闻（异步版本，返回结构化列表）
 
         Args:
             symbol: 股票代码，为None时获取市场新闻
             limit: 返回数量限制
+            market: 市场码 CN/HK/US，为 None 时自动推断
 
         Returns:
             新闻列表
@@ -1203,8 +1240,8 @@ class AKShareProvider(BaseStockDataProvider):
                 # 获取个股新闻
                 self.logger.debug(f"📰 获取AKShare个股新闻: {symbol}")
 
-                # 标准化股票代码
-                symbol_6 = symbol.zfill(6)
+                # 按市场标准化股票代码（港股保持5位，禁止补到6位）
+                query_symbol, resolved_market = self._resolve_news_query(symbol, market)
 
                 # 检测是否在 Docker 环境中
                 is_docker = os.path.exists('/.dockerenv') or os.environ.get('DOCKER_CONTAINER') == 'true'
@@ -1221,8 +1258,9 @@ class AKShareProvider(BaseStockDataProvider):
                         self.logger.debug(f"🐳 检测到 Docker 环境，使用 curl_cffi 直接调用 API")
                         news_df = await asyncio.to_thread(
                             self._get_stock_news_direct,
-                            symbol=symbol_6,
-                            limit=limit
+                            symbol=query_symbol,
+                            limit=limit,
+                            market=market
                         )
                         if news_df is not None and not news_df.empty:
                             self.logger.info(f"✅ {symbol} Docker 环境直接调用 API 成功")
@@ -1242,7 +1280,7 @@ class AKShareProvider(BaseStockDataProvider):
                         try:
                             news_df = await asyncio.to_thread(
                                 ak.stock_news_em,
-                                symbol=symbol_6
+                                symbol=query_symbol
                             )
                             break  # 成功则跳出重试循环
                         except json.JSONDecodeError as e:
@@ -1286,7 +1324,9 @@ class AKShareProvider(BaseStockDataProvider):
                         summary = str(row.get('新闻摘要', '') or row.get('摘要', ''))
 
                         news_item = {
-                            "symbol": symbol,
+                            # 落库代码必须与检索代码一致，否则会出现"用A补零码抓、用港股原码存"的缓存污染
+                            "symbol": query_symbol,
+                            "market": resolved_market,
                             "title": title,
                             "content": content,
                             "summary": summary,

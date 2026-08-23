@@ -7,7 +7,6 @@
 
 import logging
 from datetime import datetime
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -21,82 +20,170 @@ class UnifiedNewsAnalyzer:
             toolkit: 包含各种新闻获取工具的工具包
         """
         self.toolkit = toolkit
+        # 最近一次相关性闸门统计，用于区分"没有新闻"与"新闻全部不相关"
+        self._last_gate_stats = None
         
-    def get_stock_news_unified(self, stock_code: str, max_news: int = 10, model_info: str = "") -> str:
+    # 市场码到内部股票类型名称的映射
+    MARKET_TO_STOCK_TYPE = {"CN": "A股", "HK": "港股", "US": "美股"}
+
+    def get_stock_news_unified(self, stock_code: str, market: str = None,
+                               company_name: str = None, max_news: int = 10,
+                               model_info: str = "") -> str:
         """
         统一新闻获取接口
-        根据股票代码自动识别股票类型并获取相应新闻
-        
+        根据上游传入的市场（缺省时按代码格式推断）路由到对应市场的新闻获取逻辑
+
         Args:
             stock_code: 股票代码
+            market: 市场码 CN/HK/US，上游已知市场时必须传入
+            company_name: 公司名称，用于港股按公司名检索与相关性判定
             max_news: 最大新闻数量
             model_info: 当前使用的模型信息，用于特殊处理
-            
+
         Returns:
             str: 格式化的新闻内容
         """
         logger.info(f"[统一新闻工具] 开始获取 {stock_code} 的新闻，模型: {model_info}")
         logger.info(f"[统一新闻工具] 🤖 当前模型信息: {model_info}")
-        
+
+        # 每次调用重置相关性闸门诊断信息
+        self._last_gate_stats = None
+
         # 识别股票类型
-        stock_type = self._identify_stock_type(stock_code)
-        logger.info(f"[统一新闻工具] 股票类型: {stock_type}")
-        
+        stock_type = self._identify_stock_type(stock_code, market)
+        logger.info(f"[统一新闻工具] 股票类型: {stock_type} (market={market})")
+
         # 根据股票类型调用相应的获取方法
         if stock_type == "A股":
-            result = self._get_a_share_news(stock_code, max_news, model_info)
+            result = self._get_a_share_news(stock_code, max_news, model_info, company_name)
         elif stock_type == "港股":
-            result = self._get_hk_share_news(stock_code, max_news, model_info)
+            result = self._get_hk_share_news(stock_code, max_news, model_info, company_name)
         elif stock_type == "美股":
             result = self._get_us_share_news(stock_code, max_news, model_info)
         else:
-            # 默认使用A股逻辑
-            result = self._get_a_share_news(stock_code, max_news, model_info)
-        
+            # 不再默认按A股处理：港股代码一旦被当作A股，就会被补零命中别的证券
+            logger.error(f"[统一新闻工具] ❌ 无法识别 {stock_code} 所属市场，拒绝猜测")
+            result = f"❌ 无法识别股票代码 {stock_code} 所属市场，未获取新闻"
+
         # 🔍 添加详细的结果调试日志
         logger.info(f"[统一新闻工具] 📊 新闻获取完成，结果长度: {len(result)} 字符")
         logger.info(f"[统一新闻工具] 📋 返回结果预览 (前1000字符): {result[:1000]}")
-        
+
         # 如果结果为空或过短，记录警告
         if not result or len(result.strip()) < 50:
             logger.warning(f"[统一新闻工具] ⚠️ 返回结果异常短或为空！")
             logger.warning(f"[统一新闻工具] 📝 完整结果内容: '{result}'")
-        
-        return result
-    
-    def _identify_stock_type(self, stock_code: str) -> str:
-        """识别股票类型"""
-        stock_code = stock_code.upper().strip()
-        
-        # A股判断
-        if re.match(r'^(00|30|60|68)\d{4}$', stock_code):
-            return "A股"
-        elif re.match(r'^(SZ|SH)\d{6}$', stock_code):
-            return "A股"
-        
-        # 港股判断
-        elif re.match(r'^\d{4,5}\.HK$', stock_code):
-            return "港股"
-        elif re.match(r'^\d{4,5}$', stock_code) and len(stock_code) <= 5:
-            return "港股"
-        
-        # 美股判断
-        elif re.match(r'^[A-Z]{1,5}$', stock_code):
-            return "美股"
-        elif '.' in stock_code and not stock_code.endswith('.HK'):
-            return "美股"
-        
-        # 默认按A股处理
-        else:
-            return "A股"
 
-    def _get_news_from_database(self, stock_code: str, max_news: int = 10) -> str:
+        return result
+
+    def _identify_stock_type(self, stock_code: str, market: str = None) -> str:
+        """
+        识别股票类型
+
+        显式 market 优先，其次按代码格式推断；无法确定时返回"未知"而不是默认A股。
+
+        Args:
+            stock_code: 股票代码
+            market: 市场码 CN/HK/US 或中文市场名
+
+        Returns:
+            str: A股 / 港股 / 美股 / 未知
+        """
+        from tradingagents.utils.stock_utils import detect_market
+
+        try:
+            return self.MARKET_TO_STOCK_TYPE[detect_market(stock_code, market)]
+        except (ValueError, KeyError) as e:
+            logger.error(f"[统一新闻工具] 市场识别失败 {stock_code} (market={market}): {e}")
+            return "未知"
+
+    def _resolve_symbol_and_name(self, stock_code: str, market: str,
+                                 company_name: str = None) -> tuple:
+        """
+        解析规范代码与公司名
+
+        Args:
+            stock_code: 原始股票代码
+            market: 市场码 CN/HK/US
+            company_name: 上游已知公司名
+
+        Returns:
+            tuple: (规范代码, 公司名)
+        """
+        from tradingagents.utils.news_filter import get_company_name
+        from tradingagents.utils.stock_utils import normalize_symbol
+
+        symbol = normalize_symbol(stock_code, market)
+        resolved_name = company_name or get_company_name(symbol, market)
+        return symbol, resolved_name
+
+    def _safe_detect_market(self, stock_code: str) -> str:
+        """按代码格式推断市场，失败时返回 None（不猜测为A股）"""
+        from tradingagents.utils.stock_utils import detect_market
+
+        try:
+            return detect_market(stock_code)
+        except ValueError:
+            logger.warning(f"[统一新闻工具] 无法推断 {stock_code} 的市场")
+            return None
+
+    def _apply_relevance_gate(self, items: list, symbol: str, market: str,
+                              company_name: str = None) -> list:
+        """
+        相关性闸门：拦截与目标股票无关的新闻
+
+        东方财富新闻接口是关键词搜索，即使代码正确也可能返回其他证券的新闻，
+        因此在落库前和交给大模型前都要过一遍相关性判定。
+
+        Args:
+            items: 新闻条目列表
+            symbol: 规范代码
+            market: 市场码
+            company_name: 公司名
+
+        Returns:
+            list: 保留下来的新闻条目
+        """
+        try:
+            from tradingagents.utils.news_filter import filter_news_items
+
+            kept, stats = filter_news_items(
+                items, symbol, market=market, company_name=company_name
+            )
+            self._last_gate_stats = stats
+
+            if items and not kept:
+                logger.warning(
+                    f"[统一新闻工具] 🚫 {symbol} 共 {len(items)} 条候选新闻全部被相关性闸门拦截"
+                )
+            return kept
+        except Exception as e:
+            # 闸门本身异常不应阻断主流程，退化为不过滤
+            logger.error(f"[统一新闻工具] 相关性闸门执行失败，跳过过滤: {e}")
+            return items
+
+    def _build_gate_failure_message(self, stock_code: str) -> str:
+        """
+        构造"全部新闻不相关"的失败文案
+
+        文案刻意保持简短（< 100 字符），以命中新闻分析师的"内容过短"降级判断，
+        避免把无关新闻或空报告交给大模型。
+        """
+        stats = self._last_gate_stats or {}
+        name = stats.get('company_name', '')
+        total = stats.get('original_count', 0)
+        return f"❌ 未获取到与 {stock_code}（{name}）相关的可靠新闻：{total} 条候选全部被相关性过滤拦截"
+
+    def _get_news_from_database(self, stock_code: str, max_news: int = 10,
+                                market: str = None, company_name: str = None) -> str:
         """
         从数据库获取新闻
 
         Args:
             stock_code: 股票代码
             max_news: 最大新闻数量
+            market: 市场码 CN/HK/US，用于按市场维度隔离查询
+            company_name: 公司名，用于相关性闸门
 
         Returns:
             str: 格式化的新闻内容，如果没有新闻则返回空字符串
@@ -116,22 +203,34 @@ class UnifiedNewsAnalyzer:
             db = client.get_database('tradingagents')
             collection = db.stock_news
 
-            # 标准化股票代码（去除后缀）
-            clean_code = stock_code.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
-                                   .replace('.XSHE', '').replace('.XSHG', '').replace('.HK', '')
+            # 按市场归一代码：港股保持5位，A股补齐6位
+            resolved_market = market or self._safe_detect_market(stock_code)
+            if resolved_market:
+                clean_code, resolved_name = self._resolve_symbol_and_name(
+                    stock_code, resolved_market, company_name
+                )
+            else:
+                clean_code = stock_code.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
+                                       .replace('.XSHE', '').replace('.XSHG', '').replace('.HK', '')
+                resolved_name = company_name
 
             # 查询最近30天的新闻（扩大时间范围）
             thirty_days_ago = datetime.now() - timedelta(days=30)
 
-            # 尝试多种查询方式（使用 symbol 字段）
-            query_list = [
-                {'symbol': clean_code, 'publish_time': {'$gte': thirty_days_ago}},
-                {'symbol': stock_code, 'publish_time': {'$gte': thirty_days_ago}},
-                {'symbols': clean_code, 'publish_time': {'$gte': thirty_days_ago}},
-                # 如果最近30天没有新闻，则查询所有新闻（不限时间）
-                {'symbol': clean_code},
-                {'symbols': clean_code},
-            ]
+            # 市场维度必须参与查询，否则港股 01810 会命中历史上被补零写入的 A 股/基金脏数据。
+            # 不再保留"不限时间"的宽松兜底查询，避免捞出早期错误数据。
+            market_filter = (
+                {'$or': [{'markets': resolved_market}, {'market': resolved_market}]}
+                if resolved_market else {}
+            )
+
+            query_list = []
+            for symbol_filter in ({'symbol': clean_code}, {'symbols': clean_code}):
+                query = dict(symbol_filter)
+                query['publish_time'] = {'$gte': thirty_days_ago}
+                if market_filter:
+                    query.update(market_filter)
+                query_list.append(query)
 
             news_items = []
             for query in query_list:
@@ -144,6 +243,14 @@ class UnifiedNewsAnalyzer:
             if not news_items:
                 logger.info(f"[统一新闻工具] 数据库中没有找到 {stock_code} 的新闻")
                 return ""
+
+            # 相关性闸门：数据库里可能残留历史脏数据，读取时再拦一道
+            if resolved_market:
+                news_items = self._apply_relevance_gate(
+                    news_items, clean_code, resolved_market, resolved_name
+                )
+                if not news_items:
+                    return ""
 
             # 格式化新闻
             report = f"# {stock_code} 最新新闻 (数据库缓存)\n\n"
@@ -184,14 +291,16 @@ class UnifiedNewsAnalyzer:
             logger.error(traceback.format_exc())
             return ""
 
-    def _sync_news_from_akshare(self, stock_code: str, max_news: int = 10) -> bool:
+    def _sync_news_from_akshare(self, stock_code: str, max_news: int = 10,
+                                company_name: str = None) -> bool:
         """
-        从AKShare同步新闻到数据库（同步方法）
+        从AKShare同步A股新闻到数据库（同步方法）
         使用同步的数据库客户端和新线程中的事件循环，避免事件循环冲突
 
         Args:
             stock_code: 股票代码
             max_news: 最大新闻数量
+            company_name: 公司名，用于相关性闸门
 
         Returns:
             bool: 是否同步成功
@@ -200,9 +309,10 @@ class UnifiedNewsAnalyzer:
             import asyncio
             import concurrent.futures
 
-            # 标准化股票代码（去除后缀）
-            clean_code = stock_code.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
-                                   .replace('.XSHE', '').replace('.XSHG', '').replace('.HK', '')
+            # A股代码归一为6位
+            clean_code, resolved_name = self._resolve_symbol_and_name(
+                stock_code, "CN", company_name
+            )
 
             logger.info(f"[统一新闻工具] 🔄 开始同步 {clean_code} 的新闻...")
 
@@ -223,10 +333,11 @@ class UnifiedNewsAnalyzer:
                             # 创建 provider 实例
                             provider = AKShareProvider()
 
-                            # 调用 provider 获取新闻
+                            # 调用 provider 获取新闻（该方法仅服务A股分支）
                             news_data = await provider.get_stock_news(
                                 symbol=clean_code,
-                                limit=max_news
+                                limit=max_news,
+                                market="CN"
                             )
 
                             return news_data
@@ -245,6 +356,14 @@ class UnifiedNewsAnalyzer:
                         return False
 
                     logger.info(f"[统一新闻工具] 📥 获取到 {len(news_data)} 条新闻")
+
+                    # 相关性闸门：关键词搜索可能夹带其他证券的新闻，落库前先拦一道
+                    news_data = self._apply_relevance_gate(
+                        news_data, clean_code, "CN", resolved_name
+                    )
+                    if not news_data:
+                        logger.warning(f"[统一新闻工具] ⚠️ {clean_code} 新闻全部与该股票无关，不落库")
+                        return False
 
                     # 🔥 使用同步方法保存到数据库（不依赖事件循环）
                     from app.services.news_data_service import NewsDataService
@@ -279,20 +398,87 @@ class UnifiedNewsAnalyzer:
             logger.error(traceback.format_exc())
             return False
 
-    def _sync_hk_news_from_akshare(self, stock_code: str, max_news: int = 10) -> bool:
+    def _build_hk_search_keywords(self, symbol: str, raw_code: str, company_name: str) -> list:
+        """
+        构造港股新闻检索关键词，公司名优先
+
+        东方财富新闻接口本质是关键词搜索而非按代码精确查询，
+        用"小米集团"能拿到的相关新闻远多于用"01810"，
+        所以公司名放在第一位，代码变体作为兜底。
+
+        Args:
+            symbol: 规范化的5位港股代码
+            raw_code: 用户输入去后缀后的原始代码（可能是4位）
+            company_name: 公司名，未解析成功时形如"港股01810"
+
+        Returns:
+            list: 去重后的检索关键词
+        """
+        keywords = []
+
+        if company_name and not company_name.startswith(('港股', '股票')):
+            keywords.append(company_name)
+
+        keywords.append(symbol)
+
+        # 保留用户输入的原始位数写法（如 0700），部分新闻正文只用这种写法
+        if raw_code and raw_code != symbol:
+            keywords.append(raw_code)
+
+        unique_keywords = []
+        for keyword in keywords:
+            if keyword and keyword not in unique_keywords:
+                unique_keywords.append(keyword)
+
+        return unique_keywords
+
+    def _fetch_em_news_by_keyword(self, keyword: str, max_retries: int = 3):
+        """
+        按关键词调用东方财富新闻接口，失败时指数退避重试
+
+        Args:
+            keyword: 检索关键词（公司名或代码）
+            max_retries: 最大重试次数
+
+        Returns:
+            DataFrame 或 None
+        """
+        import time
+
+        import akshare as ak
+
+        retry_delay = 1
+        for attempt in range(max_retries):
+            try:
+                return ak.stock_news_em(symbol=keyword)
+            except Exception as inner_e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"[统一新闻工具] ⚠️ 关键词 {keyword} 第{attempt + 1}次获取新闻失败: "
+                        f"{inner_e}，{retry_delay}秒后重试..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    logger.error(f"[统一新闻工具] ❌ 关键词 {keyword} 获取新闻失败: {inner_e}")
+        return None
+
+    def _sync_hk_news_from_akshare(self, stock_code: str, max_news: int = 10,
+                                   company_name: str = None) -> bool:
         """
         从AKShare同步港股新闻到数据库（同步方法）
 
         与 _sync_news_from_akshare 的关键区别：
-        - 直接调用 ak.stock_news_em(symbol=clean_code)，不经过 AKShareProvider 内部的
-          symbol.zfill(6) 逻辑（zfill 会把港股 5 位代码 06030 错误填充成 006030，
-          导致东方财富无法正确匹配港股新闻）。
+        - 港股代码归一为 5 位后直接检索，绝不走 A 股的 zfill(6)
+          （006030 会被东方财富当成别的证券，01810 更会命中基金 001810）。
+        - 公司名优先的多关键词检索，代码变体兜底，结果按标题去重合并。
+        - 落库前经过相关性闸门，保证入库数据确实属于该港股。
         - 保存时 market="HK"，与 A 股的 "CN" 区分，便于后续按市场维度查询/统计。
-        - 单线程同步执行，不需要新事件循环（不调异步 provider）。
 
         Args:
             stock_code: 港股代码（如 06030.HK 或 06030）
             max_news: 最大新闻数量
+            company_name: 公司名，缺省时自动查表
 
         Returns:
             bool: 是否成功同步并保存了至少一条新闻
@@ -300,87 +486,88 @@ class UnifiedNewsAnalyzer:
         try:
             max_news = int(max_news)
 
-            # 标准化港股代码：仅去除 .HK 后缀，保留原始位数（5 位或 4 位）
-            clean_code = stock_code.replace('.HK', '').replace('.hk', '').strip()
-            if not clean_code:
+            raw_code = stock_code.replace('.HK', '').replace('.hk', '').strip()
+            if not raw_code:
                 logger.warning(f"[统一新闻工具] 港股代码标准化后为空: {stock_code}")
                 return False
 
-            logger.info(f"[统一新闻工具] 🔄 开始同步港股 {clean_code} 的新闻（绕过 zfill）...")
+            clean_code, resolved_name = self._resolve_symbol_and_name(
+                stock_code, "HK", company_name
+            )
 
             try:
-                import akshare as ak
+                import akshare  # noqa: F401
             except ImportError:
                 logger.error(f"[统一新闻工具] ❌ akshare 未安装，无法同步港股新闻")
                 return False
 
-            # 重试机制：JSON 解码错误或网络抖动时指数退避
-            max_retries = 3
-            retry_delay = 1
-            news_df = None
+            keywords = self._build_hk_search_keywords(clean_code, raw_code, resolved_name)
+            logger.info(
+                f"[统一新闻工具] 🔄 开始同步港股 {clean_code}（{resolved_name}）的新闻，"
+                f"检索关键词: {keywords}"
+            )
 
-            import time
-            for attempt in range(max_retries):
-                try:
-                    news_df = ak.stock_news_em(symbol=clean_code)
-                    break
-                except Exception as inner_e:
-                    if attempt < max_retries - 1:
-                        logger.warning(
-                            f"[统一新闻工具] ⚠️ 港股 {clean_code} 第{attempt + 1}次获取新闻失败: "
-                            f"{inner_e}，{retry_delay}秒后重试..."
-                        )
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                    else:
-                        logger.error(f"[统一新闻工具] ❌ 港股 {clean_code} 获取新闻失败: {inner_e}")
-                        return False
-
-            if news_df is None or news_df.empty:
-                logger.warning(f"[统一新闻工具] ⚠️ AKShare 未返回港股 {clean_code} 的新闻数据")
-                return False
-
-            logger.info(f"[统一新闻工具] 📥 AKShare 返回 {len(news_df)} 条港股原始新闻数据")
-
-            # 转换为标准新闻数据结构（字段对齐 _standardize_news_data 的预期）
+            # 多关键词检索并按标题去重合并
             news_data = []
-            for _, row in news_df.head(max_news).iterrows():
-                title = str(row.get('新闻标题', '') or row.get('标题', '')).strip()
-                content = str(row.get('新闻内容', '') or row.get('内容', '')).strip()
-                url = str(row.get('新闻链接', '') or row.get('链接', '')).strip()
-                publish_time = str(row.get('发布时间', '') or row.get('时间', '')).strip()
-                source = str(row.get('文章来源', '') or row.get('来源', '') or '东方财富').strip()
+            seen_titles = set()
 
-                # 跳过空标题或明显的噪声短标题（< 5 字符基本无信息量）
-                if not title or len(title) < 5:
+            for keyword in keywords:
+                news_df = self._fetch_em_news_by_keyword(keyword)
+                if news_df is None or news_df.empty:
+                    logger.info(f"[统一新闻工具] 关键词 {keyword} 未返回新闻")
                     continue
 
-                news_data.append({
-                    'symbol': clean_code,
-                    'title': title,
-                    'content': content,
-                    'summary': content[:200] if content else '',
-                    'url': url,
-                    'source': source,
-                    'publish_time': publish_time,
-                    'category': 'general',
-                    'sentiment': 'neutral',
-                    'sentiment_score': 0.0,
-                    'keywords': [],
-                    'importance': 'medium',
-                })
+                logger.info(f"[统一新闻工具] 📥 关键词 {keyword} 返回 {len(news_df)} 条原始新闻")
+
+                for _, row in news_df.head(max_news).iterrows():
+                    title = str(row.get('新闻标题', '') or row.get('标题', '')).strip()
+                    content = str(row.get('新闻内容', '') or row.get('内容', '')).strip()
+                    url = str(row.get('新闻链接', '') or row.get('链接', '')).strip()
+                    publish_time = str(row.get('发布时间', '') or row.get('时间', '')).strip()
+                    source = str(row.get('文章来源', '') or row.get('来源', '') or '东方财富').strip()
+
+                    # 跳过空标题或明显的噪声短标题（< 5 字符基本无信息量）
+                    if not title or len(title) < 5 or title in seen_titles:
+                        continue
+
+                    seen_titles.add(title)
+                    news_data.append({
+                        'symbol': clean_code,
+                        'market': 'HK',
+                        'title': title,
+                        'content': content,
+                        'summary': content[:200] if content else '',
+                        'url': url,
+                        'source': source,
+                        'publish_time': publish_time,
+                        'category': 'general',
+                        'sentiment': 'neutral',
+                        'sentiment_score': 0.0,
+                        'keywords': [],
+                        'importance': 'medium',
+                        'search_keyword': keyword,
+                    })
+
+                if len(news_data) >= max_news:
+                    break
 
             if not news_data:
                 logger.warning(
-                    f"[统一新闻工具] ⚠️ 港股 {clean_code} 转换后无有效新闻（标题全部过短或为空）"
+                    f"[统一新闻工具] ⚠️ 港股 {clean_code} 所有关键词均未获取到有效新闻"
                 )
+                return False
+
+            # 相关性闸门：关键词搜索可能夹带其他证券（尤其是基金）的新闻
+            news_data = self._apply_relevance_gate(news_data, clean_code, "HK", resolved_name)
+            if not news_data:
+                logger.warning(f"[统一新闻工具] ⚠️ 港股 {clean_code} 新闻全部与该股票无关，不落库")
                 return False
 
             # 保存到数据库
             from app.services.news_data_service import NewsDataService
             news_service = NewsDataService()
             saved_count = news_service.save_news_data_sync(
-                news_data=news_data,
+                news_data=news_data[:max_news],
                 data_source="akshare",
                 market="HK"
             )
@@ -394,7 +581,8 @@ class UnifiedNewsAnalyzer:
             logger.error(traceback.format_exc())
             return False
 
-    def _get_a_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
+    def _get_a_share_news(self, stock_code: str, max_news: int, model_info: str = "",
+                          company_name: str = None) -> str:
         """获取A股新闻"""
         logger.info(f"[统一新闻工具] 获取A股 {stock_code} 新闻")
 
@@ -404,7 +592,9 @@ class UnifiedNewsAnalyzer:
         # 优先级0: 从数据库获取新闻（最高优先级）
         try:
             logger.info(f"[统一新闻工具] 🔍 优先从数据库获取 {stock_code} 的新闻...")
-            db_news = self._get_news_from_database(stock_code, max_news)
+            db_news = self._get_news_from_database(
+                stock_code, max_news, market="CN", company_name=company_name
+            )
             if db_news:
                 logger.info(f"[统一新闻工具] ✅ 数据库新闻获取成功: {len(db_news)} 字符")
                 return self._format_news_result(db_news, "数据库缓存", model_info)
@@ -414,12 +604,14 @@ class UnifiedNewsAnalyzer:
                 # 🔥 数据库没有数据时，调用同步服务同步新闻
                 try:
                     logger.info(f"[统一新闻工具] 📡 调用同步服务同步 {stock_code} 的新闻...")
-                    synced_news = self._sync_news_from_akshare(stock_code, max_news)
+                    synced_news = self._sync_news_from_akshare(stock_code, max_news, company_name)
 
                     if synced_news:
                         logger.info(f"[统一新闻工具] ✅ 同步成功，重新从数据库获取...")
                         # 重新从数据库获取
-                        db_news = self._get_news_from_database(stock_code, max_news)
+                        db_news = self._get_news_from_database(
+                            stock_code, max_news, market="CN", company_name=company_name
+                        )
                         if db_news:
                             logger.info(f"[统一新闻工具] ✅ 同步后数据库新闻获取成功: {len(db_news)} 字符")
                             return self._format_news_result(db_news, "数据库缓存(新同步)", model_info)
@@ -476,10 +668,15 @@ class UnifiedNewsAnalyzer:
                     return self._format_news_result(result, "OpenAI全球新闻", model_info)
         except Exception as e:
             logger.warning(f"[统一新闻工具] OpenAI新闻获取失败: {e}")
-        
+
+        # 区分"没有新闻"与"新闻全部不相关"：后者必须明确失败，不能把无关新闻交给大模型
+        if self._last_gate_stats and self._last_gate_stats.get('original_count'):
+            return self._build_gate_failure_message(stock_code)
+
         return "❌ 无法获取A股新闻数据，所有新闻源均不可用"
-    
-    def _get_hk_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
+
+    def _get_hk_share_news(self, stock_code: str, max_news: int, model_info: str = "",
+                           company_name: str = None) -> str:
         """获取港股新闻
 
         优先级（与 A 股保持一致的"数据库缓存 + AKShare 同步"骨架，但保留独立分支
@@ -497,7 +694,9 @@ class UnifiedNewsAnalyzer:
         # 优先级0: 从数据库获取新闻（最高优先级，与 A 股保持一致）
         try:
             logger.info(f"[统一新闻工具] 🔍 优先从数据库获取港股 {stock_code} 的新闻...")
-            db_news = self._get_news_from_database(stock_code, max_news)
+            db_news = self._get_news_from_database(
+                stock_code, max_news, market="HK", company_name=company_name
+            )
             if db_news:
                 logger.info(f"[统一新闻工具] ✅ 港股数据库新闻获取成功: {len(db_news)} 字符")
                 return self._format_news_result(db_news, "数据库缓存(港股)", model_info)
@@ -507,11 +706,15 @@ class UnifiedNewsAnalyzer:
                 # 数据库没有数据时，调用同步服务同步新闻（港股专用同步方法，不走 zfill）
                 try:
                     logger.info(f"[统一新闻工具] 📡 调用 AKShare 同步港股 {stock_code} 的新闻...")
-                    synced_news = self._sync_hk_news_from_akshare(stock_code, max_news)
+                    synced_news = self._sync_hk_news_from_akshare(
+                        stock_code, max_news, company_name
+                    )
 
                     if synced_news:
                         logger.info(f"[统一新闻工具] ✅ 港股新闻同步成功，重新从数据库获取...")
-                        db_news = self._get_news_from_database(stock_code, max_news)
+                        db_news = self._get_news_from_database(
+                            stock_code, max_news, market="HK", company_name=company_name
+                        )
                         if db_news:
                             logger.info(
                                 f"[统一新闻工具] ✅ 港股同步后数据库新闻获取成功: {len(db_news)} 字符"
@@ -564,6 +767,10 @@ class UnifiedNewsAnalyzer:
                     return self._format_news_result(result, "OpenAI港股新闻", model_info)
         except Exception as e:
             logger.warning(f"[统一新闻工具] OpenAI 港股新闻获取失败: {e}")
+
+        # 区分"没有新闻"与"新闻全部不相关"：后者必须明确失败，不能把基金新闻当成小米新闻
+        if self._last_gate_stats and self._last_gate_stats.get('original_count'):
+            return self._build_gate_failure_message(stock_code)
 
         return "❌ 无法获取港股新闻数据，所有新闻源均不可用"
     
@@ -710,22 +917,31 @@ def create_unified_news_tool(toolkit):
     """创建统一新闻工具函数"""
     analyzer = UnifiedNewsAnalyzer(toolkit)
     
-    def get_stock_news_unified(stock_code: str, max_news: int = 100, model_info: str = ""):
+    def get_stock_news_unified(stock_code: str, market: str = None, company_name: str = None,
+                               max_news: int = 100, model_info: str = ""):
         """
         统一新闻获取工具
-        
+
         Args:
             stock_code (str): 股票代码 (支持A股如000001、港股如0700.HK、美股如AAPL)
+            market (str): 市场码 CN/HK/US，上游已知市场时应显式传入
+            company_name (str): 公司名称，港股用于按公司名检索新闻
             max_news (int): 最大新闻数量，默认100
             model_info (str): 当前使用的模型信息，用于特殊处理
-        
+
         Returns:
             str: 格式化的新闻内容
         """
         if not stock_code:
             return "❌ 错误: 未提供股票代码"
-        
-        return analyzer.get_stock_news_unified(stock_code, max_news, model_info)
+
+        return analyzer.get_stock_news_unified(
+            stock_code,
+            market=market,
+            company_name=company_name,
+            max_news=max_news,
+            model_info=model_info,
+        )
     
     # 设置工具属性
     get_stock_news_unified.name = "get_stock_news_unified"
@@ -733,11 +949,12 @@ def create_unified_news_tool(toolkit):
 统一新闻获取工具 - 根据股票代码自动获取相应市场的新闻
 
 功能:
-- 自动识别股票类型（A股/港股/美股）
+- 支持显式传入 market（CN/HK/US），缺省时按代码格式识别，识别不出时明确报错
 - 根据股票类型选择最佳新闻源
 - A股: 数据库缓存 -> AKShare(东方财富)同步 -> 东方财富实时新闻 -> Google中文 -> OpenAI
-- 港股: 数据库缓存 -> AKShare(东方财富)同步 -> 实时新闻聚合器 -> Google中文 -> OpenAI
+- 港股: 数据库缓存 -> AKShare(东方财富)按公司名+代码检索同步 -> 实时新闻聚合器 -> Google中文 -> OpenAI
 - 美股: 优先OpenAI -> Google英文 -> FinnHub
+- 所有新闻经过相关性闸门过滤，拦截基金/指数等其他证券的新闻
 - 返回格式化的新闻内容
 - 支持Google模型的特殊长度控制
 """

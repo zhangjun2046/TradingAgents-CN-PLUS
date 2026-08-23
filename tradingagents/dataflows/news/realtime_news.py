@@ -154,10 +154,18 @@ class RealtimeNewsAggregator:
             end_time = datetime.now(ZoneInfo(get_timezone_name()))
             start_time = end_time - timedelta(hours=hours_back)
 
+            # FinnHub 使用 1810.HK 这类形式，港股代码需要转换后再请求
+            try:
+                from tradingagents.utils.stock_utils import detect_market, to_provider_symbol
+
+                finnhub_symbol = to_provider_symbol(ticker, detect_market(ticker), 'finnhub')
+            except ValueError:
+                finnhub_symbol = ticker
+
             # FinnHub API调用
             url = "https://finnhub.io/api/v1/company-news"
             params = {
-                'symbol': ticker,
+                'symbol': finnhub_symbol,
                 'from': start_time.strftime('%Y-%m-%d'),
                 'to': end_time.strftime('%Y-%m-%d'),
                 'token': self.finnhub_key
@@ -316,19 +324,25 @@ class RealtimeNewsAggregator:
 
                 provider = AKShareProvider()
 
-                # 处理股票代码格式
-                # 如果是美股代码，不使用东方财富新闻
-                if '.' in ticker and any(suffix in ticker for suffix in ['.US', '.N', '.O', '.NYSE', '.NASDAQ']):
-                    logger.info(f"[中文财经新闻] 检测到美股代码 {ticker}，跳过东方财富新闻获取")
+                # 处理股票代码格式：按市场分流，港股不能复用A股的6位补零规则
+                from tradingagents.utils.stock_utils import (
+                    MARKET_CN, MARKET_HK, detect_market, normalize_symbol
+                )
+
+                try:
+                    news_market = detect_market(ticker)
+                except ValueError:
+                    news_market = None
+
+                if news_market not in (MARKET_CN, MARKET_HK):
+                    logger.info(f"[中文财经新闻] {ticker} 非A股/港股，跳过东方财富新闻获取")
                 else:
-                    # 处理A股和港股代码
-                    clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
-                                    .replace('.HK', '').replace('.XSHE', '').replace('.XSHG', '')
+                    clean_ticker = normalize_symbol(ticker, news_market)
 
                     # 获取东方财富新闻
-                    logger.info(f"[中文财经新闻] 开始获取 {clean_ticker} 的东方财富新闻")
+                    logger.info(f"[中文财经新闻] 开始获取 {clean_ticker} 的东方财富新闻 (市场: {news_market})")
                     em_start_time = datetime.now(ZoneInfo(get_timezone_name()))
-                    news_df = provider.get_stock_news_sync(symbol=clean_ticker)
+                    news_df = provider.get_stock_news_sync(symbol=clean_ticker, market=news_market)
 
                     if not news_df.empty:
                         logger.info(f"[中文财经新闻] 东方财富返回 {len(news_df)} 条新闻数据，开始处理")
@@ -755,7 +769,7 @@ def get_realtime_stock_news(ticker: str, curr_date: str, hours_back: int = 6) ->
             start_time = datetime.now(ZoneInfo(get_timezone_name()))
             logger.info(f"[新闻分析] 东方财富API调用开始时间: {start_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
-            news_df = provider.get_stock_news_sync(symbol=clean_ticker, limit=10)
+            news_df = provider.get_stock_news_sync(symbol=clean_ticker, limit=10, market="CN")
 
             end_time = datetime.now(ZoneInfo(get_timezone_name()))
             time_taken = (end_time - start_time).total_seconds()
@@ -858,19 +872,22 @@ def get_realtime_stock_news(ticker: str, curr_date: str, hours_back: int = 6) ->
         # 发生异常时，继续尝试备用方案
 
     # 备用方案1: 对于港股，优先尝试使用东方财富新闻（A股已在前面处理）
-    if not is_china_stock and '.HK' in ticker:
+    # 判定使用 StockUtils 而非 '.HK' in ticker，否则无后缀的 01810 走不进这个分支
+    from tradingagents.utils.stock_utils import StockUtils, normalize_symbol
+
+    if not is_china_stock and StockUtils.is_hk_stock(ticker):
         logger.info(f"[新闻分析] 检测到港股代码 {ticker}，尝试使用东方财富新闻源")
         try:
             from tradingagents.dataflows.providers.china.akshare import AKShareProvider
 
             provider = AKShareProvider()
 
-            # 处理港股代码
-            clean_ticker = ticker.replace('.HK', '')
+            # 港股代码统一为5位，禁止补齐到6位
+            clean_ticker = normalize_symbol(ticker, "HK")
 
             logger.info(f"[新闻分析] 开始从东方财富获取港股 {clean_ticker} 的新闻数据")
             start_time = datetime.now(ZoneInfo(get_timezone_name()))
-            news_df = provider.get_stock_news_sync(symbol=clean_ticker, limit=10)
+            news_df = provider.get_stock_news_sync(symbol=clean_ticker, limit=10, market="HK")
             end_time = datetime.now(ZoneInfo(get_timezone_name()))
             time_taken = (end_time - start_time).total_seconds()
 

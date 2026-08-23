@@ -937,16 +937,21 @@ class TushareProvider(BaseStockDataProvider):
         content = news_item.get("content", "").lower()
         title = news_item.get("title", "").lower()
 
-        # 标准化股票代码
-        symbol_clean = symbol.replace('.SH', '').replace('.SZ', '').zfill(6)
+        # 按市场生成代码别名，港股 01810 不能被补零成 001810 后再匹配
+        try:
+            from tradingagents.utils.stock_utils import detect_market, symbol_aliases
 
-        # 关键词匹配
-        return any([
-            symbol_clean in content,
-            symbol_clean in title,
-            symbol in content,
-            symbol in title
-        ])
+            candidates = symbol_aliases(symbol, detect_market(symbol))
+        except ValueError:
+            candidates = [symbol]
+
+        if symbol not in candidates:
+            candidates.append(symbol)
+
+        return any(
+            candidate.lower() in content or candidate.lower() in title
+            for candidate in candidates
+        )
 
     def _deduplicate_news(self, news_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """新闻去重"""

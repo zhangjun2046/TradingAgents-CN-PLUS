@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Union
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 import logging
-from pymongo import ReplaceOne
+from pymongo import UpdateOne
 from pymongo.errors import BulkWriteError
 from bson import ObjectId
 
@@ -42,6 +42,7 @@ class NewsQueryParams:
     """新闻查询参数"""
     symbol: Optional[str] = None
     symbols: Optional[List[str]] = None
+    market: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     category: Optional[str] = None
@@ -130,6 +131,14 @@ class NewsDataService:
             # 10. 更新时间索引（数据维护）
             await collection.create_index([("updated_at", -1)], name="updated_at_index", background=True)
 
+            # 11. 市场+股票+时间复合索引：按市场维度查询新闻的主索引
+            # 不改动既有唯一索引，避免历史数据触发 E11000
+            await collection.create_index([
+                ("markets", 1),
+                ("symbols", 1),
+                ("publish_time", -1)
+            ], name="markets_symbols_time_index", background=True)
+
             self._indexes_ensured = True
             self.logger.info("✅ 新闻数据索引检查完成")
         except Exception as e:
@@ -193,20 +202,7 @@ class NewsDataService:
                     self.logger.info(f"      publish_time: {standardized_news.get('publish_time')} (type: {type(standardized_news.get('publish_time'))})")
                     self.logger.info(f"      url: {standardized_news.get('url', '')[:80]}...")
 
-                # 使用URL、标题和发布时间作为唯一标识
-                filter_query = {
-                    "url": standardized_news["url"],
-                    "title": standardized_news["title"],
-                    "publish_time": standardized_news["publish_time"]
-                }
-
-                operations.append(
-                    ReplaceOne(
-                        filter_query,
-                        standardized_news,
-                        upsert=True
-                    )
-                )
+                operations.append(self._build_upsert_operation(standardized_news, now))
             
             # 执行批量操作
             if operations:
@@ -294,20 +290,7 @@ class NewsDataService:
                     self.logger.info(f"      publish_time: {publish_time} (type: {type(publish_time)})")
                     self.logger.info(f"      url: {standardized_news.get('url', '')[:60]}...")
 
-                # 使用URL+标题+发布时间作为唯一标识
-                filter_query = {
-                    "url": standardized_news.get("url"),
-                    "title": standardized_news.get("title"),
-                    "publish_time": standardized_news.get("publish_time")
-                }
-
-                operations.append(
-                    ReplaceOne(
-                        filter_query,
-                        standardized_news,
-                        upsert=True
-                    )
-                )
+                operations.append(self._build_upsert_operation(standardized_news, now))
 
             # 执行批量操作（同步方式）
             if operations:
@@ -360,7 +343,13 @@ class NewsDataService:
         # 如果有主要股票代码但symbols为空，添加到symbols中
         if symbol and symbol not in symbols:
             symbols = [symbol] + symbols
-        
+
+        # markets 数组用于市场维度隔离：同一篇新闻可能同时关联A股与港股（如AH两地上市），
+        # 单值 market 字段会被后写入的一方覆盖，导致港股查询命中不到或误命中
+        markets = news_data.get("markets", [])
+        if market and market not in markets:
+            markets = [market] + markets
+
         # 标准化数据结构
         standardized = {
             # 基础信息
@@ -368,6 +357,7 @@ class NewsDataService:
             "full_symbol": self._get_full_symbol(symbol, market) if symbol else None,
             "market": market,
             "symbols": symbols,
+            "markets": markets,
             
             # 新闻内容
             "title": news_data.get("title", ""),
@@ -397,6 +387,55 @@ class NewsDataService:
         
         return standardized
     
+    def _build_upsert_operation(self, standardized_news: Dict[str, Any], now: datetime):
+        """
+        构造新闻 upsert 操作
+
+        沿用 (url, title, publish_time) 作为过滤条件，与既有唯一索引一致，
+        因此同一篇新闻被不同股票命中时不会触发 E11000，而是把该股票累加进关联数组。
+        symbols / markets 用 $addToSet 累加，其余内容字段用 $set 覆盖为最新值。
+
+        Args:
+            standardized_news: 标准化后的新闻文档
+            now: 本批次写入时间
+
+        Returns:
+            UpdateOne: 可直接放入 bulk_write 的操作
+        """
+        filter_query = {
+            "url": standardized_news.get("url"),
+            "title": standardized_news.get("title"),
+            "publish_time": standardized_news.get("publish_time"),
+        }
+
+        document = dict(standardized_news)
+        symbols = document.pop("symbols", []) or []
+        markets = document.pop("markets", []) or []
+        # 过滤条件字段不需要重复 $set
+        for key in ("url", "title", "publish_time"):
+            document.pop(key, None)
+        created_at = document.pop("created_at", now)
+        document.pop("version", None)
+
+        update = {
+            "$set": document,
+            "$setOnInsert": {
+                "created_at": created_at,
+                "version": 1,
+                **filter_query,
+            },
+        }
+
+        add_to_set = {}
+        if symbols:
+            add_to_set["symbols"] = {"$each": symbols}
+        if markets:
+            add_to_set["markets"] = {"$each": markets}
+        if add_to_set:
+            update["$addToSet"] = add_to_set
+
+        return UpdateOne(filter_query, update, upsert=True)
+
     def _get_full_symbol(self, symbol: str, market: str) -> str:
         """获取完整股票代码"""
         if not symbol:
@@ -480,6 +519,14 @@ class NewsDataService:
             if params.symbols:
                 query["symbols"] = {"$in": params.symbols}
                 self.logger.info(f"   添加查询条件: symbols in {params.symbols}")
+
+            if params.market:
+                # 兼容历史数据：老文档只有单值 market，新文档同时维护 markets 数组
+                query["$or"] = [
+                    {"markets": params.market},
+                    {"market": params.market},
+                ]
+                self.logger.info(f"   添加查询条件: market={params.market}")
 
             if params.start_time or params.end_time:
                 time_query = {}

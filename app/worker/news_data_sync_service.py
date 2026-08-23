@@ -91,36 +91,45 @@ class NewsDataSyncService:
         symbol: str,
         data_sources: List[str] = None,
         hours_back: int = 24,
-        max_news_per_source: int = 50
+        max_news_per_source: int = 50,
+        market: str = None
     ) -> NewsSyncStats:
         """
         同步单只股票的新闻数据
-        
+
         Args:
             symbol: 股票代码
             data_sources: 数据源列表，默认使用所有可用源
             hours_back: 回溯小时数
             max_news_per_source: 每个数据源最大新闻数量
-            
+            market: 市场码 CN/HK/US，为 None 时按代码格式推断
+
         Returns:
             同步统计信息
         """
+        from tradingagents.utils.stock_utils import detect_market, normalize_symbol
+
         stats = NewsSyncStats()
-        
+
         try:
-            self.logger.info(f"📰 开始同步股票新闻: {symbol}")
-            
+            # 先确定市场并归一代码：港股必须保持5位，否则后续抓取会命中A股/基金
+            resolved_market = detect_market(symbol, market)
+            symbol = normalize_symbol(symbol, resolved_market)
+
+            self.logger.info(f"📰 开始同步股票新闻: {symbol} (市场: {resolved_market})")
+
             if data_sources is None:
-                data_sources = ["tushare", "akshare", "realtime"]
-            
+                data_sources = self._default_data_sources(resolved_market)
+                self.logger.info(f"📰 {resolved_market} 市场默认数据源: {data_sources}")
+
             news_service = await self._get_news_service()
             all_news = []
-            
+
             # 1. Tushare新闻
             if "tushare" in data_sources:
                 try:
                     tushare_news = await self._sync_tushare_news(
-                        symbol, hours_back, max_news_per_source
+                        symbol, hours_back, max_news_per_source, resolved_market
                     )
                     if tushare_news:
                         all_news.extend(tushare_news)
@@ -133,7 +142,7 @@ class NewsDataSyncService:
             if "akshare" in data_sources:
                 try:
                     akshare_news = await self._sync_akshare_news(
-                        symbol, hours_back, max_news_per_source
+                        symbol, hours_back, max_news_per_source, resolved_market
                     )
                     if akshare_news:
                         all_news.extend(akshare_news)
@@ -146,7 +155,7 @@ class NewsDataSyncService:
             if "realtime" in data_sources:
                 try:
                     realtime_news = await self._sync_realtime_news(
-                        symbol, hours_back, max_news_per_source
+                        symbol, hours_back, max_news_per_source, resolved_market
                     )
                     if realtime_news:
                         all_news.extend(realtime_news)
@@ -162,10 +171,17 @@ class NewsDataSyncService:
                 # 去重处理
                 unique_news = self._deduplicate_news(all_news)
                 stats.duplicate_skipped = len(all_news) - len(unique_news)
-                
-                # 批量保存
+
+                # 相关性闸门：拦截关键词搜索夹带的其他证券新闻
+                unique_news = self._apply_relevance_gate(unique_news, symbol, resolved_market)
+                if not unique_news:
+                    self.logger.warning(f"⚠️ {symbol} 新闻全部与该股票无关，跳过落库")
+                    stats.end_time = datetime.utcnow()
+                    return stats
+
+                # 批量保存：market 必须是真实市场，硬编码 CN 会让港股数据被当成A股
                 saved_count = await news_service.save_news_data(
-                    unique_news, "multi_source", "CN"
+                    unique_news, "multi_source", resolved_market
                 )
                 stats.successful_saves = saved_count
                 stats.failed_saves = len(unique_news) - saved_count
@@ -180,11 +196,48 @@ class NewsDataSyncService:
             stats.end_time = datetime.utcnow()
             return stats
     
+    def _default_data_sources(self, market: str) -> List[str]:
+        """
+        按市场给出默认数据源
+
+        Tushare 新闻接口只覆盖 A 股，对港股/美股调用只会浪费额度并返回空结果。
+        """
+        if market == "CN":
+            return ["tushare", "akshare", "realtime"]
+        return ["akshare", "realtime"]
+
+    def _apply_relevance_gate(self, news_list: List[Dict[str, Any]], symbol: str,
+                              market: str) -> List[Dict[str, Any]]:
+        """
+        相关性闸门：过滤掉与目标股票无关的新闻
+
+        Args:
+            news_list: 待落库的新闻列表
+            symbol: 规范代码
+            market: 市场码
+
+        Returns:
+            List[Dict]: 保留的新闻
+        """
+        try:
+            from tradingagents.utils.news_filter import filter_news_items
+
+            kept, gate_stats = filter_news_items(news_list, symbol, market=market)
+            self.logger.info(
+                f"🔎 {symbol} 相关性过滤: {gate_stats['original_count']} -> "
+                f"{gate_stats['filtered_count']} 条"
+            )
+            return kept
+        except Exception as e:
+            self.logger.error(f"❌ 相关性闸门执行失败，跳过过滤: {e}")
+            return news_list
+
     async def _sync_tushare_news(
         self,
         symbol: str,
         hours_back: int,
-        max_news: int
+        max_news: int,
+        market: str = "CN"
     ) -> List[Dict[str, Any]]:
         """同步Tushare新闻"""
         try:
@@ -205,7 +258,7 @@ class NewsDataSyncService:
                 # 标准化新闻数据
                 standardized_news = []
                 for news in news_data:
-                    standardized = self._standardize_tushare_news(news, symbol)
+                    standardized = self._standardize_tushare_news(news, symbol, market)
                     if standardized:
                         standardized_news.append(standardized)
 
@@ -229,7 +282,8 @@ class NewsDataSyncService:
         self, 
         symbol: str, 
         hours_back: int, 
-        max_news: int
+        max_news: int,
+        market: str = "CN"
     ) -> List[Dict[str, Any]]:
         """同步AKShare新闻"""
         try:
@@ -238,14 +292,14 @@ class NewsDataSyncService:
             if not provider.is_available():
                 return []
             
-            # 获取新闻数据
-            news_data = await provider.get_stock_news(symbol, limit=max_news)
+            # 获取新闻数据（显式传入市场，港股不会被补零成6位）
+            news_data = await provider.get_stock_news(symbol, limit=max_news, market=market)
             
             if news_data:
                 # 标准化新闻数据
                 standardized_news = []
                 for news in news_data:
-                    standardized = self._standardize_akshare_news(news, symbol)
+                    standardized = self._standardize_akshare_news(news, symbol, market)
                     if standardized:
                         standardized_news.append(standardized)
                 
@@ -261,7 +315,8 @@ class NewsDataSyncService:
         self, 
         symbol: str, 
         hours_back: int, 
-        max_news: int
+        max_news: int,
+        market: str = "CN"
     ) -> List[Dict[str, Any]]:
         """同步实时新闻"""
         try:
@@ -276,7 +331,7 @@ class NewsDataSyncService:
                 # 标准化新闻数据
                 standardized_news = []
                 for news_item in news_items:
-                    standardized = self._standardize_realtime_news(news_item, symbol)
+                    standardized = self._standardize_realtime_news(news_item, symbol, market)
                     if standardized:
                         standardized_news.append(standardized)
                 
@@ -288,11 +343,13 @@ class NewsDataSyncService:
             self.logger.error(f"❌ 实时新闻同步失败: {e}")
             return []
     
-    def _standardize_tushare_news(self, news: Dict[str, Any], symbol: str) -> Optional[Dict[str, Any]]:
+    def _standardize_tushare_news(self, news: Dict[str, Any], symbol: str,
+                                  market: str = "CN") -> Optional[Dict[str, Any]]:
         """标准化Tushare新闻数据"""
         try:
             return {
                 "symbol": symbol,
+                "market": market,
                 "title": news.get("title", ""),
                 "content": news.get("content", ""),
                 "summary": news.get("summary", ""),
@@ -310,11 +367,13 @@ class NewsDataSyncService:
             self.logger.error(f"❌ 标准化Tushare新闻失败: {e}")
             return None
     
-    def _standardize_akshare_news(self, news: Dict[str, Any], symbol: str) -> Optional[Dict[str, Any]]:
+    def _standardize_akshare_news(self, news: Dict[str, Any], symbol: str,
+                                  market: str = "CN") -> Optional[Dict[str, Any]]:
         """标准化AKShare新闻数据"""
         try:
             return {
                 "symbol": symbol,
+                "market": market,
                 "title": news.get("title", ""),
                 "content": news.get("content", ""),
                 "summary": news.get("summary", ""),
@@ -332,11 +391,13 @@ class NewsDataSyncService:
             self.logger.error(f"❌ 标准化AKShare新闻失败: {e}")
             return None
     
-    def _standardize_realtime_news(self, news_item, symbol: str) -> Optional[Dict[str, Any]]:
+    def _standardize_realtime_news(self, news_item, symbol: str,
+                                   market: str = "CN") -> Optional[Dict[str, Any]]:
         """标准化实时新闻数据"""
         try:
             return {
                 "symbol": symbol,
+                "market": market,
                 "title": news_item.title,
                 "content": news_item.content,
                 "summary": news_item.content[:200] + "..." if len(news_item.content) > 200 else news_item.content,
@@ -434,7 +495,8 @@ class NewsDataSyncService:
         self,
         data_sources: List[str] = None,
         hours_back: int = 24,
-        max_news_per_source: int = 100
+        max_news_per_source: int = 100,
+        market: str = "CN"
     ) -> NewsSyncStats:
         """
         同步市场新闻
@@ -443,6 +505,7 @@ class NewsDataSyncService:
             data_sources: 数据源列表
             hours_back: 回溯小时数
             max_news_per_source: 每个数据源最大新闻数量
+            market: 市场码 CN/HK/US，标识这批大盘新闻属于哪个市场
             
         Returns:
             同步统计信息
@@ -450,7 +513,7 @@ class NewsDataSyncService:
         stats = NewsSyncStats()
         
         try:
-            self.logger.info("📰 开始同步市场新闻...")
+            self.logger.info(f"📰 开始同步市场新闻... (市场: {market})")
             
             if data_sources is None:
                 data_sources = ["realtime"]
@@ -470,7 +533,7 @@ class NewsDataSyncService:
                     
                     if news_items:
                         for news_item in news_items:
-                            standardized = self._standardize_realtime_news(news_item, None)
+                            standardized = self._standardize_realtime_news(news_item, None, market)
                             if standardized:
                                 all_news.append(standardized)
                         
@@ -490,7 +553,7 @@ class NewsDataSyncService:
                 
                 # 批量保存
                 saved_count = await news_service.save_news_data(
-                    unique_news, "market_news", "CN"
+                    unique_news, "market_news", market
                 )
                 stats.successful_saves = saved_count
                 stats.failed_saves = len(unique_news) - saved_count

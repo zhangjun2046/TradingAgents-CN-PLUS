@@ -38,6 +38,7 @@ class NewsSyncRequest(BaseModel):
     data_sources: Optional[List[str]] = Field(None, description="数据源列表")
     hours_back: int = Field(24, description="回溯小时数")
     max_news_per_source: int = Field(50, description="每个数据源最大新闻数量")
+    market: Optional[str] = Field(None, description="市场码 CN/HK/US，不传则按代码格式推断")
 
 
 @router.get("/query/{symbol}", response_model=dict)
@@ -47,6 +48,7 @@ async def query_stock_news(
     limit: int = Query(20, description="返回数量限制"),
     category: Optional[str] = Query(None, description="新闻类别"),
     sentiment: Optional[str] = Query(None, description="情绪分析"),
+    market: Optional[str] = Query(None, description="市场码 CN/HK/US，不传则按代码格式推断"),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -58,6 +60,7 @@ async def query_stock_news(
         limit: 返回数量限制
         category: 新闻类别过滤
         sentiment: 情绪分析过滤
+        market: 市场码，缺省时按代码格式推断
 
     Returns:
         dict: 新闻数据列表
@@ -65,11 +68,18 @@ async def query_stock_news(
     try:
         service = await get_news_data_service()
 
+        # 按市场归一代码：港股保持5位，A股补齐6位，避免跨市场串数据
+        from tradingagents.utils.stock_utils import detect_market, normalize_symbol
+
+        news_market = detect_market(symbol, market)
+        symbol = normalize_symbol(symbol, news_market)
+
         # 构建查询参数
         start_time = datetime.utcnow() - timedelta(hours=hours_back)
 
         params = NewsQueryParams(
             symbol=symbol,
+            market=news_market,
             start_time=start_time,
             category=category,
             sentiment=sentiment,
@@ -84,7 +94,7 @@ async def query_stock_news(
 
         # 2. 如果数据库没有数据，实时获取
         if not news_list:
-            logger.info(f"📰 数据库无新闻数据，实时获取: {symbol}")
+            logger.info(f"📰 数据库无新闻数据，实时获取: {symbol} (市场: {news_market})")
             try:
                 from app.worker.akshare_sync_service import get_akshare_sync_service
                 sync_service = await get_akshare_sync_service()
@@ -92,7 +102,8 @@ async def query_stock_news(
                 # 实时获取新闻
                 news_data = await sync_service.provider.get_stock_news(
                     symbol=symbol,
-                    limit=limit
+                    limit=limit,
+                    market=news_market
                 )
 
                 if news_data:
@@ -100,7 +111,7 @@ async def query_stock_news(
                     saved_count = await service.save_news_data(
                         news_data=news_data,
                         data_source="akshare",
-                        market="CN"
+                        market=news_market
                     )
                     logger.info(f"✅ 实时获取并保存 {saved_count} 条新闻")
 
@@ -384,6 +395,7 @@ async def sync_single_stock_news(
     data_sources: Optional[List[str]] = None,
     hours_back: int = 24,
     max_news_per_source: int = 50,
+    market: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -394,6 +406,7 @@ async def sync_single_stock_news(
         data_sources: 数据源列表
         hours_back: 回溯小时数
         max_news_per_source: 每个数据源最大新闻数量
+        market: 市场码 CN/HK/US，不传则按代码格式推断
         
     Returns:
         dict: 同步结果
@@ -406,7 +419,8 @@ async def sync_single_stock_news(
             symbol=symbol,
             data_sources=data_sources,
             hours_back=hours_back,
-            max_news_per_source=max_news_per_source
+            max_news_per_source=max_news_per_source,
+            market=market
         )
         
         return ok(data={
@@ -494,7 +508,8 @@ async def _execute_stock_news_sync(sync_service, request: NewsSyncRequest):
             symbol=request.symbol,
             data_sources=request.data_sources,
             hours_back=request.hours_back,
-            max_news_per_source=request.max_news_per_source
+            max_news_per_source=request.max_news_per_source,
+            market=request.market
         )
     except Exception as e:
         logger.error(f"❌ 后台股票新闻同步失败: {e}")

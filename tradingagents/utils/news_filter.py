@@ -3,27 +3,70 @@
 用于过滤与特定股票/公司不相关的新闻，提高新闻分析质量
 """
 
-import pandas as pd
 import re
-from typing import List, Dict, Tuple
+import unicodedata
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 import logging
 
+# pandas 仅供 DataFrame 接口使用，在方法内部按需导入。
+# dict/list 形式的相关性闸门位于落库与大模型之间的热路径上，不应为此拖入 pandas。
+
 logger = logging.getLogger(__name__)
+
+# 未知公司名的占位前缀，命中时说明公司名未解析成功
+_UNKNOWN_NAME_PREFIXES = ('股票', '港股', '美股', 'STOCK')
+
+# 公司名后缀，用于派生简称："小米集团" -> "小米"，可识别"小米汽车"这类只带简称的新闻
+_COMPANY_NAME_SUFFIXES = (
+    '集团股份有限公司', '股份有限公司', '有限公司', '控股集团',
+    '集团', '控股', '股份', '公司', '-W', '-S', '-SW',
+)
+
+# 新闻条目里标题/正文可能使用的字段名（中英文数据源混用）
+_TITLE_KEYS = ('title', '新闻标题', '标题')
+_CONTENT_KEYS = ('content', '新闻内容', '内容', 'summary', '摘要')
+
+
+def _normalize_text(value: str) -> str:
+    """
+    统一全角/半角形态
+
+    港股名称常带全角后缀（"小米集团－Ｗ"），新闻正文里却写半角，
+    不做归一会导致公司名匹配不上，相关性判定直接失效。
+    """
+    if not value:
+        return ''
+    return unicodedata.normalize('NFKC', str(value))
+
+
+def _pick_field(item: Dict[str, Any], keys: Tuple[str, ...]) -> str:
+    """从新闻条目中取第一个非空字段"""
+    for key in keys:
+        value = item.get(key)
+        if value:
+            return str(value)
+    return ''
+
 
 class NewsRelevanceFilter:
     """基于规则的新闻相关性过滤器"""
-    
-    def __init__(self, stock_code: str, company_name: str):
+
+    def __init__(self, stock_code: str, company_name: str, market: Optional[str] = None):
         """
         初始化过滤器
-        
+
         Args:
             stock_code: 股票代码，如 "600036"
             company_name: 公司名称，如 "招商银行"
+            market: 市场码 CN/HK/US，用于生成代码别名；为 None 时按代码格式推断
         """
         self.stock_code = stock_code.upper()
         self.company_name = company_name
+        self.market = market
+        self.company_aliases = self._build_company_aliases(company_name)
+        self.has_company_name = bool(self.company_aliases)
+        self.code_patterns = self._build_code_patterns(stock_code, market)
         
         # 排除关键词 - 这些词出现时降低相关性
         self.exclude_keywords = [
@@ -47,7 +90,97 @@ class NewsRelevanceFilter:
             '股权激励', '员工持股', '定增', '配股', '送股',
             '资产重组', '借壳上市', '退市', '摘帽', 'ST'
         ]
-    
+
+    @staticmethod
+    def _build_company_aliases(company_name: str) -> List[str]:
+        """
+        生成公司名别名列表
+
+        新闻标题常只写简称（"小米汽车交付量创新高"），因此除全称外还要派生去后缀的简称。
+        公司名未解析成功（形如"港股01810"）时返回空列表，交由调用方降级处理。
+        """
+        if not company_name:
+            return []
+
+        name = _normalize_text(company_name).strip()
+        if not name or name.upper().startswith(_UNKNOWN_NAME_PREFIXES):
+            return []
+
+        aliases = [name]
+        candidate = name
+        changed = True
+        while changed:
+            changed = False
+            for suffix in _COMPANY_NAME_SUFFIXES:
+                if candidate.endswith(suffix) and len(candidate) - len(suffix) >= 2:
+                    candidate = candidate[: -len(suffix)]
+                    if candidate not in aliases:
+                        aliases.append(candidate)
+                    changed = True
+                    break
+
+        return aliases
+
+    @staticmethod
+    def _build_code_patterns(stock_code: str, market: Optional[str]) -> List[re.Pattern]:
+        """
+        生成代码匹配正则
+
+        必须带数字边界：港股 01810 若用朴素子串匹配，会命中基金代码 001810，
+        正是本次问题里"小米集团"报告混入基金新闻的根源之一。
+        """
+        candidates = [str(stock_code).upper()]
+
+        try:
+            from tradingagents.utils.stock_utils import detect_market, symbol_aliases
+
+            resolved_market = market or detect_market(stock_code)
+            candidates = symbol_aliases(stock_code, resolved_market)
+        except (ImportError, ValueError) as e:
+            logger.debug(f"[过滤器] 代码别名生成失败，退化为原始代码匹配: {e}")
+
+        patterns = []
+        seen = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            patterns.append(re.compile(rf'(?<!\d){re.escape(candidate)}(?!\d)', re.IGNORECASE))
+
+        return patterns
+
+    def _match_company(self, text: str) -> Optional[str]:
+        """返回文本命中的公司名别名"""
+        normalized = _normalize_text(text)
+        for alias in self.company_aliases:
+            if alias in normalized:
+                return alias
+        return None
+
+    def _match_code(self, text: str) -> Optional[str]:
+        """返回文本命中的代码别名"""
+        normalized = _normalize_text(text)
+        for pattern in self.code_patterns:
+            if pattern.search(normalized):
+                return pattern.pattern
+        return None
+
+    def is_noise(self, title: str, content: str) -> bool:
+        """
+        判断新闻是否为明显噪声：既不提本公司也不提本代码，却含基金/指数类排除词
+
+        公司名未知时无法给出可靠评分，此时只用这条规则拦截噪声，避免误杀全部新闻。
+        """
+        title = title or ''
+        content = content or ''
+        combined = f"{title}\n{content}"
+
+        if self._match_company(combined) or self._match_code(combined):
+            return False
+
+        lowered = combined.lower()
+        return any(keyword in lowered for keyword in self.exclude_keywords)
+
     def calculate_relevance_score(self, title: str, content: str) -> float:
         """
         计算新闻相关性评分
@@ -60,22 +193,28 @@ class NewsRelevanceFilter:
             float: 相关性评分 (0-100)
         """
         score = 0
+        title = title or ''
+        content = content or ''
         title_lower = title.lower()
         content_lower = content.lower()
-        
-        # 1. 直接提及公司名称
-        if self.company_name in title:
+
+        # 1. 直接提及公司名称（含简称别名，如"小米集团"的"小米"）
+        title_company = self._match_company(title)
+        content_company = self._match_company(content)
+        if title_company:
             score += 50  # 标题中出现公司名称，高分
-            logger.debug(f"[过滤器] 标题包含公司名称 '{self.company_name}': +50分")
-        elif self.company_name in content:
+            logger.debug(f"[过滤器] 标题包含公司名称 '{title_company}': +50分")
+        elif content_company:
             score += 25  # 内容中出现公司名称，中等分
-            logger.debug(f"[过滤器] 内容包含公司名称 '{self.company_name}': +25分")
-            
-        # 2. 直接提及股票代码
-        if self.stock_code in title:
+            logger.debug(f"[过滤器] 内容包含公司名称 '{content_company}': +25分")
+
+        # 2. 直接提及股票代码（带数字边界，01810 不会被 001810 误命中）
+        title_code = self._match_code(title)
+        content_code = self._match_code(content)
+        if title_code:
             score += 40  # 标题中出现股票代码，高分
             logger.debug(f"[过滤器] 标题包含股票代码 '{self.stock_code}': +40分")
-        elif self.stock_code in content:
+        elif content_code:
             score += 20  # 内容中出现股票代码，中等分
             logger.debug(f"[过滤器] 内容包含股票代码 '{self.stock_code}': +20分")
             
@@ -119,8 +258,8 @@ class NewsRelevanceFilter:
             logger.debug(f"[过滤器] 排除关键词匹配: {exclude_matches[:3]}...")
             
         # 6. 特殊规则：如果标题完全不包含公司信息但包含排除词，严重减分
-        if (self.company_name not in title and self.stock_code not in title and 
-            any(keyword in title_lower for keyword in self.exclude_keywords)):
+        if (not title_company and not title_code and
+                any(keyword in title_lower for keyword in self.exclude_keywords)):
             score -= 30
             logger.debug(f"[过滤器] 标题无公司信息但含排除词: -30分")
         
@@ -131,7 +270,7 @@ class NewsRelevanceFilter:
         
         return final_score
     
-    def filter_news(self, news_df: pd.DataFrame, min_score: float = 30) -> pd.DataFrame:
+    def filter_news(self, news_df: "pd.DataFrame", min_score: float = 30) -> "pd.DataFrame":
         """
         过滤新闻DataFrame
         
@@ -142,6 +281,8 @@ class NewsRelevanceFilter:
         Returns:
             pd.DataFrame: 过滤后的新闻DataFrame，按相关性评分排序
         """
+        import pandas as pd
+
         if news_df.empty:
             logger.warning("[过滤器] 输入新闻DataFrame为空")
             return news_df
@@ -178,7 +319,8 @@ class NewsRelevanceFilter:
             
         return filtered_df
     
-    def get_filter_statistics(self, original_df: pd.DataFrame, filtered_df: pd.DataFrame) -> Dict:
+    def get_filter_statistics(self, original_df: "pd.DataFrame",
+                              filtered_df: "pd.DataFrame") -> Dict:
         """
         获取过滤统计信息
         
@@ -237,21 +379,48 @@ STOCK_COMPANY_MAPPING = {
     # 更多股票可以继续添加...
 }
 
-def get_company_name(ticker: str) -> str:
+def get_company_name(ticker: str, market: Optional[str] = None) -> str:
     """
     获取股票代码对应的公司名称
-    
+
+    港股不在 STOCK_COMPANY_MAPPING 中（该表只收录A股），需要走港股专用映射，
+    否则港股会一直拿到"股票01810"这样的占位名，相关性判定形同虚设。
+
     Args:
         ticker: 股票代码
-        
+        market: 市场码 CN/HK/US，为 None 时按代码格式推断
+
     Returns:
-        str: 公司名称
+        str: 公司名称，未解析成功时返回占位名
     """
-    # 清理股票代码（移除后缀）
     clean_ticker = ticker.split('.')[0]
-    
+
+    resolved_market = market
+    if resolved_market is None:
+        try:
+            from tradingagents.utils.stock_utils import detect_market
+
+            resolved_market = detect_market(ticker)
+        except (ImportError, ValueError):
+            resolved_market = None
+
+    if resolved_market == 'HK':
+        try:
+            from tradingagents.dataflows.providers.hk.improved_hk import get_hk_company_name_improved
+
+            hk_name = get_hk_company_name_improved(clean_ticker)
+            if hk_name and not hk_name.upper().startswith(_UNKNOWN_NAME_PREFIXES):
+                logger.debug(f"[公司映射] {ticker} -> {hk_name}")
+                return hk_name
+        except Exception as e:
+            logger.warning(f"[公司映射] 港股公司名获取失败 {ticker}: {e}")
+
+        default_name = f"港股{clean_ticker}"
+        logger.warning(f"[公司映射] 未找到 {ticker} 的港股公司名称，使用默认: {default_name}")
+        return default_name
+
     company_name = STOCK_COMPANY_MAPPING.get(clean_ticker)
-    
+
     if company_name:
         logger.debug(f"[公司映射] {ticker} -> {company_name}")
         return company_name
@@ -262,18 +431,104 @@ def get_company_name(ticker: str) -> str:
         return default_name
 
 
-def create_news_filter(ticker: str) -> NewsRelevanceFilter:
+def create_news_filter(ticker: str, market: Optional[str] = None,
+                       company_name: Optional[str] = None) -> NewsRelevanceFilter:
     """
     创建新闻过滤器的便捷函数
-    
+
     Args:
         ticker: 股票代码
-        
+        market: 市场码 CN/HK/US，为 None 时按代码格式推断
+        company_name: 上游已知的公司名，缺省时自动查表
+
     Returns:
         NewsRelevanceFilter: 配置好的过滤器实例
     """
-    company_name = get_company_name(ticker)
-    return NewsRelevanceFilter(ticker, company_name)
+    resolved_name = company_name or get_company_name(ticker, market)
+    return NewsRelevanceFilter(ticker, resolved_name, market=market)
+
+
+def filter_news_items(items: List[Dict[str, Any]], symbol: str, market: Optional[str] = None,
+                      company_name: Optional[str] = None,
+                      min_score: float = 25) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    相关性闸门：过滤 dict/list 形式的新闻条目
+
+    与 filter_news 的区别是不依赖 DataFrame，可直接作用于 MongoDB 文档和
+    AKShare 转换后的字典列表，因此能在落库前和交给大模型前都拦一道。
+
+    公司名未解析成功时退化为"仅拦截明显噪声"，避免把全部新闻误杀导致无新闻可分析。
+
+    Args:
+        items: 新闻条目列表，标题/正文字段兼容中英文命名
+        symbol: 股票代码
+        market: 市场码 CN/HK/US
+        company_name: 公司名，缺省时自动查表
+        min_score: 最低相关性评分阈值，25 对应"正文提及本公司"这一最低相关档
+
+    Returns:
+        Tuple[List[Dict], Dict]: (保留的新闻条目, 过滤统计信息)
+    """
+    original_count = len(items or [])
+    news_filter = create_news_filter(symbol, market=market, company_name=company_name)
+    strict = news_filter.has_company_name
+
+    stats = {
+        'symbol': symbol,
+        'market': market,
+        'company_name': news_filter.company_name,
+        'strict_mode': strict,
+        'min_score': min_score,
+        'original_count': original_count,
+        'filtered_count': 0,
+        'rejected_count': 0,
+        'max_score': 0.0,
+        'avg_score': 0.0,
+    }
+
+    if not items:
+        return [], stats
+
+    if not strict:
+        logger.warning(
+            f"[相关性闸门] {symbol} 公司名未解析（{news_filter.company_name}），"
+            f"降级为仅拦截基金/指数类噪声"
+        )
+
+    kept: List[Dict[str, Any]] = []
+    scores: List[float] = []
+
+    for item in items:
+        title = _pick_field(item, _TITLE_KEYS)
+        content = _pick_field(item, _CONTENT_KEYS)
+        score = news_filter.calculate_relevance_score(title, content)
+
+        if strict:
+            keep = score >= min_score
+        else:
+            keep = score >= min_score or not news_filter.is_noise(title, content)
+
+        if keep:
+            enriched = dict(item)
+            enriched['relevance_score'] = score
+            kept.append(enriched)
+            scores.append(score)
+        else:
+            logger.info(f"[相关性闸门] 拦截无关新闻 (评分 {score:.1f}): {title[:40]}")
+
+    kept.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+
+    stats['filtered_count'] = len(kept)
+    stats['rejected_count'] = original_count - len(kept)
+    stats['max_score'] = max(scores) if scores else 0.0
+    stats['avg_score'] = sum(scores) / len(scores) if scores else 0.0
+
+    logger.info(
+        f"[相关性闸门] {symbol}({news_filter.company_name}) 相关性过滤: "
+        f"{original_count} -> {len(kept)} 条, news_relevance_score_max={stats['max_score']:.1f}"
+    )
+
+    return kept, stats
 
 
 # 使用示例

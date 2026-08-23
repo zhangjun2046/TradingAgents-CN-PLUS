@@ -1104,10 +1104,16 @@ class AKShareSyncService:
 
         for symbol in batch:
             try:
+                # 按代码格式判定市场，避免港股代码被按A股规则补零
+                from tradingagents.utils.stock_utils import detect_market
+
+                news_market = detect_market(symbol)
+
                 # 从AKShare获取新闻数据
                 news_data = await self.provider.get_stock_news(
                     symbol=symbol,
-                    limit=max_news_per_stock
+                    limit=max_news_per_stock,
+                    market=news_market
                 )
 
                 if news_data:
@@ -1115,7 +1121,7 @@ class AKShareSyncService:
                     saved_count = await self.news_service.save_news_data(
                         news_data=news_data,
                         data_source="akshare",
-                        market="CN"
+                        market=news_market
                     )
 
                     batch_stats["success_count"] += 1

@@ -1206,8 +1206,11 @@ class Toolkit:
 
                     provider = AKShareProvider()
 
-                    # 获取东方财富新闻
-                    news_df = provider.get_stock_news_sync(symbol=clean_ticker)
+                    # 获取东方财富新闻（显式传入市场，避免港股代码被按A股规则补零）
+                    from tradingagents.utils.stock_utils import MARKET_CN, MARKET_HK
+
+                    news_market = MARKET_CN if is_china else MARKET_HK
+                    news_df = provider.get_stock_news_sync(symbol=clean_ticker, market=news_market)
 
                     if news_df is not None and not news_df.empty:
                         # 格式化东方财富新闻
