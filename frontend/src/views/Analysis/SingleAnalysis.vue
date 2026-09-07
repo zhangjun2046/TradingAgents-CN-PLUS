@@ -1424,7 +1424,7 @@ const downloadReport = async (format: string = 'markdown') => {
 
     if (!res.ok) {
       const errorText = await res.text()
-      throw new Error(errorText || `HTTP ${res.status}`)
+      throw new Error(parseDownloadError(errorText, res.status))
     }
 
     const blob = await res.blob()
@@ -1450,17 +1450,34 @@ const downloadReport = async (format: string = 'markdown') => {
     ElMessage.success(`${getFormatName(format)}报告下载成功`)
   } catch (err: any) {
     console.error('下载报告出错:', err)
-
-    // 显示详细错误信息
-    if (err.message && err.message.includes('pandoc')) {
-      ElMessage.error({
-        message: 'PDF/Word 导出需要安装 pandoc 工具',
-        duration: 5000
-      })
-    } else {
-      ElMessage.error(`下载报告失败: ${err.message || '未知错误'}`)
-    }
+    ElMessage.error({
+      message: formatDownloadErrorMessage(err),
+      duration: 5000
+    })
   }
+}
+
+const parseDownloadError = (errorText: string, status: number): string => {
+  try {
+    const payload = JSON.parse(errorText)
+    if (typeof payload?.detail === 'string' && payload.detail.trim()) {
+      return payload.detail
+    }
+    if (Array.isArray(payload?.detail)) {
+      return payload.detail.map((item: any) => item.msg || JSON.stringify(item)).join('; ')
+    }
+  } catch {
+    // ignore JSON parse errors
+  }
+  return errorText || `HTTP ${status}`
+}
+
+const formatDownloadErrorMessage = (error: any): string => {
+  const raw = error?.message || ''
+  if (raw.includes('pandoc') && (raw.trim().startsWith('{') || raw.includes('"detail"'))) {
+    return 'PDF/Word 导出需要安装 pandoc 工具'
+  }
+  return raw ? `下载报告失败: ${raw}` : '下载报告失败: 未知错误'
 }
 
 // 辅助函数：获取格式名称

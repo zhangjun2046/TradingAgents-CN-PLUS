@@ -436,8 +436,8 @@ async def download_report(
     支持的格式:
     - markdown: Markdown 格式（默认）
     - json: JSON 格式（包含完整数据）
-    - docx: Word 文档格式（需要 pandoc）
-    - pdf: PDF 格式（需要 pandoc 和 PDF 引擎）
+    - docx: Word 文档格式（pandoc 或 python-docx）
+    - pdf: PDF 格式（WeasyPrint、pdfkit 或 fpdf2）
     """
     try:
         logger.info(f"📥 下载报告: {report_id}, 格式: {format}")
@@ -471,35 +471,12 @@ async def download_report(
             )
 
         elif format == "markdown":
-            # Markdown格式下载
-            reports = doc.get("reports", {})
-            content_parts = []
+            from app.utils.report_exporter import report_exporter
 
-            # 添加标题
-            content_parts.append(f"# {stock_symbol} 分析报告")
-            content_parts.append(f"**分析日期**: {analysis_date}")
-            content_parts.append(f"**分析师**: {', '.join(doc.get('analysts', []))}")
-            content_parts.append(f"**研究深度**: {doc.get('research_depth', 1)}")
-            content_parts.append("")
-
-            # 添加摘要
-            if doc.get("summary"):
-                content_parts.append("## 执行摘要")
-                content_parts.append(doc["summary"])
-                content_parts.append("")
-
-            # 添加各模块内容
-            for module_name, module_content in reports.items():
-                if isinstance(module_content, str) and module_content.strip():
-                    content_parts.append(f"## {module_name}")
-                    content_parts.append(module_content)
-                    content_parts.append("")
-
-            content = "\n".join(content_parts)
+            content = report_exporter.generate_markdown_report(doc)
             filename = f"{stock_symbol}_{analysis_date}_report.md"
             media_type = "text/markdown"
 
-            # 返回文件流
             def generate():
                 yield content.encode('utf-8')
 
@@ -510,21 +487,18 @@ async def download_report(
             )
 
         elif format == "docx":
-            # Word 文档格式下载
             from app.utils.report_exporter import report_exporter
 
-            if not report_exporter.pandoc_available:
+            if not report_exporter.docx_available:
                 raise HTTPException(
                     status_code=400,
-                    detail="Word 导出功能不可用。请安装 pandoc: pip install pypandoc"
+                    detail="Word 导出功能不可用。请安装 python-docx，或安装 pandoc + pypandoc。"
                 )
 
             try:
-                # 生成 Word 文档
                 docx_content = report_exporter.generate_docx_report(doc)
                 filename = f"{stock_symbol}_{analysis_date}_report.docx"
 
-                # 返回文件流
                 def generate():
                     yield docx_content
 
@@ -538,21 +512,18 @@ async def download_report(
                 raise HTTPException(status_code=500, detail=f"Word 文档生成失败: {str(e)}")
 
         elif format == "pdf":
-            # PDF 格式下载
             from app.utils.report_exporter import report_exporter
 
-            if not report_exporter.pandoc_available:
+            if not report_exporter.pdf_available:
                 raise HTTPException(
                     status_code=400,
-                    detail="PDF 导出功能不可用。请安装 pandoc 和 PDF 引擎（wkhtmltopdf 或 LaTeX）"
+                    detail="PDF 导出功能不可用。请安装 fpdf2（pip install fpdf2），或安装 WeasyPrint / pdfkit 与 wkhtmltopdf。"
                 )
 
             try:
-                # 生成 PDF 文档
                 pdf_content = report_exporter.generate_pdf_report(doc)
                 filename = f"{stock_symbol}_{analysis_date}_report.pdf"
 
-                # 返回文件流
                 def generate():
                     yield pdf_content
 

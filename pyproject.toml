@@ -71,8 +71,10 @@ dependencies = [
     # 文档和格式化
     "markdown>=3.4.0",
     "pypandoc>=1.11",
-    "python-docx>=0.8.11",  # Word文档处理，用于修复文本方向
+    "python-docx>=0.8.11",  # Word文档处理，用于修复文本方向及无 pandoc 时降级导出
     "pdfkit>=1.0.0",  # PDF生成工具，需要wkhtmltopdf
+    "weasyprint>=62.0",  # PDF生成（优先引擎，Linux/Docker）
+    "fpdf2>=2.8.0",  # PDF降级引擎，Windows 无需 GTK/wkhtmltopdf
 
     # 工具和辅助
     "psutil>=6.1.0",
