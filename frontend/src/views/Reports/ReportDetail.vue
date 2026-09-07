@@ -45,6 +45,10 @@
               <el-icon><ShoppingCart /></el-icon>
               应用到交易
             </el-button>
+            <el-button @click="openShareDialog">
+              <el-icon><Share /></el-icon>
+              分享
+            </el-button>
             <el-dropdown trigger="click" @command="downloadReport">
               <el-button type="primary">
                 <el-icon><Download /></el-icon>
@@ -255,6 +259,39 @@
         </template>
       </el-result>
     </div>
+
+    <el-dialog
+      v-model="shareDialogVisible"
+      title="分享报告"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="shareLoading" class="share-dialog-loading">正在读取分享状态…</div>
+      <div v-else class="share-dialog-body">
+        <p class="share-hint">生成后可将链接发给他人，对方无需登录即可在手机上阅读全文。默认有效期 7 天。</p>
+        <template v-if="shareInfo">
+          <el-input :model-value="shareUrl" readonly>
+            <template #append>
+              <el-button @click="copyShareUrl">复制</el-button>
+            </template>
+          </el-input>
+          <p class="share-meta">有效期至 {{ formatShareExpiry(shareInfo.expires_at) }}</p>
+        </template>
+        <el-empty v-else description="尚未生成分享链接" :image-size="72" />
+      </div>
+      <template #footer>
+        <el-button @click="shareDialogVisible = false">关闭</el-button>
+        <el-button v-if="shareInfo" type="danger" plain :loading="shareSubmitting" @click="revokeShare">
+          撤销
+        </el-button>
+        <el-button v-if="shareInfo" :loading="shareSubmitting" @click="createShare(true)">
+          重新生成
+        </el-button>
+        <el-button v-else type="primary" :loading="shareSubmitting" @click="createShare(false)">
+          生成分享链接
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -283,7 +320,8 @@ import {
   Check,
   Cpu,
   QuestionFilled,
-  ArrowDown
+  ArrowDown,
+  Share
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { marked } from 'marked'
@@ -300,9 +338,18 @@ marked.setOptions({ breaks: true, gfm: true })
 
 // 响应式数据
 const loading = ref(true)
-const report = ref(null)
+const report = ref<any>(null)
 const activeModule = ref('')
 const llmConfigs = ref<LLMConfig[]>([]) // 存储所有模型配置
+const shareDialogVisible = ref(false)
+const shareLoading = ref(false)
+const shareSubmitting = ref(false)
+const shareInfo = ref<{ token: string; path: string; expires_at: string } | null>(null)
+
+const shareUrl = computed(() => {
+  if (!shareInfo.value?.path) return ''
+  return `${window.location.origin}${shareInfo.value.path}`
+})
 
 // 获取模型配置列表
 const fetchLLMConfigs = async () => {
@@ -445,6 +492,110 @@ const getFileExtension = (format: string): string => {
     'json': 'json'
   }
   return extensions[format] || 'txt'
+}
+
+const authHeaders = () => ({
+  'Authorization': `Bearer ${authStore.token}`,
+  'Content-Type': 'application/json'
+})
+
+const formatShareExpiry = (value: string) => {
+  if (!value) return '未知'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const loadShareInfo = async () => {
+  if (!report.value?.id) return
+  shareLoading.value = true
+  try {
+    const response = await fetch(`/api/reports/${report.value.id}/share`, {
+      headers: authHeaders()
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const result = await response.json()
+    shareInfo.value = result.data || null
+  } catch (error) {
+    console.error('获取分享链接失败:', error)
+    ElMessage.error('获取分享链接失败')
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+const openShareDialog = async () => {
+  shareDialogVisible.value = true
+  await loadShareInfo()
+}
+
+const createShare = async (regenerate = false) => {
+  if (!report.value?.id) return
+  shareSubmitting.value = true
+  try {
+    const response = await fetch(`/api/reports/${report.value.id}/share`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ expires_days: 7, regenerate })
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const result = await response.json()
+    if (!result.success || !result.data) {
+      throw new Error(result.message || '生成分享链接失败')
+    }
+    shareInfo.value = result.data
+    ElMessage.success(regenerate ? '已重新生成分享链接' : '分享链接已生成')
+  } catch (error) {
+    console.error('生成分享链接失败:', error)
+    ElMessage.error('生成分享链接失败')
+  } finally {
+    shareSubmitting.value = false
+  }
+}
+
+const revokeShare = async () => {
+  if (!report.value?.id) return
+  try {
+    await ElMessageBox.confirm('撤销后原链接将立即失效，确认继续？', '撤销分享', {
+      type: 'warning',
+      confirmButtonText: '确认撤销',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  shareSubmitting.value = true
+  try {
+    const response = await fetch(`/api/reports/${report.value.id}/share`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    shareInfo.value = null
+    ElMessage.success('分享链接已撤销')
+  } catch (error) {
+    console.error('撤销分享链接失败:', error)
+    ElMessage.error('撤销分享链接失败')
+  } finally {
+    shareSubmitting.value = false
+  }
+}
+
+const copyShareUrl = async () => {
+  if (!shareUrl.value) return
+  try {
+    await navigator.clipboard.writeText(shareUrl.value)
+    ElMessage.success('链接已复制')
+  } catch (error) {
+    console.error('复制分享链接失败:', error)
+    ElMessage.error('复制失败，请手动选择链接')
+  }
 }
 
 // 判断是否可以应用到交易
@@ -976,6 +1127,7 @@ onMounted(() => {
         .action-section {
           display: flex;
           gap: 8px;
+          flex-wrap: wrap;
         }
       }
     }
@@ -1276,5 +1428,21 @@ onMounted(() => {
   .error-container {
     padding: 48px 24px;
   }
+}
+
+.share-dialog-loading,
+.share-hint,
+.share-meta {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+}
+
+.share-hint {
+  margin: 0 0 16px;
+}
+
+.share-meta {
+  margin: 12px 0 0;
 }
 </style>

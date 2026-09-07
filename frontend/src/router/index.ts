@@ -338,6 +338,18 @@ const routes: RouteRecordRaw[] = [
   },
 
   {
+    path: '/s/:token',
+    name: 'ReportShare',
+    component: () => import('@/views/Reports/ReportShare.vue'),
+    meta: {
+      title: '分析报告',
+      hideInMenu: true,
+      requiresAuth: false,
+      transition: 'fade'
+    }
+  },
+
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/Auth/Login.vue'),

@@ -80,6 +80,13 @@ def ensure_indexes():
     ss.create_index([("status", ASCENDING)], name="idx_status")
     ss.create_index([("finished_at", DESCENDING)], name="idx_finished_at_desc")
 
+    # 3) report_shares 分享链接索引
+    shares = db["report_shares"]
+    shares.create_index([("token", ASCENDING)], unique=True, name="uniq_share_token")
+    shares.create_index([("lookup_ids", ASCENDING)], name="idx_share_lookup_ids")
+    shares.create_index([("expires_at", ASCENDING)], name="idx_share_expires_at")
+    print("✅ 创建 report_shares 索引: token / lookup_ids / expires_at")
+
     print("✅ 索引初始化完成")
 
 

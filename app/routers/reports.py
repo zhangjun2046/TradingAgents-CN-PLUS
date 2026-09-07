@@ -9,11 +9,22 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .auth_db import get_current_user
 from ..core.database import get_mongo_db
 from ..utils.timezone import to_config_tz
+from ..services.report_share_service import (
+    DEFAULT_EXPIRES_DAYS,
+    MAX_EXPIRES_DAYS,
+    PUBLIC_NOT_FOUND,
+    ReportNotFoundError,
+    create_or_reuse_share,
+    find_serialized_report,
+    get_active_share,
+    get_public_report_by_token,
+    revoke_shares,
+)
 import logging
 
 logger = logging.getLogger("webapi")
@@ -115,6 +126,12 @@ class ReportListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class CreateShareRequest(BaseModel):
+    """创建报告分享链接"""
+    expires_days: int = Field(DEFAULT_EXPIRES_DAYS, ge=1, le=MAX_EXPIRES_DAYS)
+    regenerate: bool = False
 
 @router.get("/list", response_model=Dict[str, Any])
 async def get_reports_list(
@@ -235,6 +252,97 @@ async def get_reports_list(
         logger.error(f"❌ 获取报告列表失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/share/{token}")
+async def get_shared_report(token: str):
+    """凭分享 token 读取公开报告（无需登录）"""
+    try:
+        report, _meta = await get_public_report_by_token(token)
+        return {
+            "success": True,
+            "data": report,
+            "message": "报告获取成功"
+        }
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail=PUBLIC_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"❌ 获取公开分享报告失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{report_id}/share")
+async def create_report_share(
+    report_id: str,
+    payload: Optional[CreateShareRequest] = None,
+    user: dict = Depends(get_current_user)
+):
+    """创建或复用报告分享链接"""
+    body = payload or CreateShareRequest()
+    try:
+        data = await create_or_reuse_share(
+            report_id,
+            user,
+            expires_days=body.expires_days,
+            regenerate=body.regenerate,
+        )
+        return {
+            "success": True,
+            "data": data,
+            "message": "分享链接已生成" if body.regenerate else "分享链接已就绪"
+        }
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    except Exception as e:
+        logger.error(f"❌ 创建报告分享失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{report_id}/share")
+async def get_report_share(
+    report_id: str,
+    user: dict = Depends(get_current_user)
+):
+    """查询当前有效的分享链接"""
+    try:
+        report = await find_serialized_report(report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="报告不存在")
+        data = await get_active_share(report_id)
+        return {
+            "success": True,
+            "data": data,
+            "message": "已有有效分享链接" if data else "暂无有效分享链接"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 查询报告分享失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{report_id}/share")
+async def delete_report_share(
+    report_id: str,
+    user: dict = Depends(get_current_user)
+):
+    """撤销该报告全部有效分享链接"""
+    try:
+        report = await find_serialized_report(report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="报告不存在")
+        count = await revoke_shares(report_id)
+        return {
+            "success": True,
+            "data": {"revoked": count},
+            "message": "分享链接已撤销"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 撤销报告分享失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{report_id}/detail")
 async def get_report_detail(
     report_id: str,
@@ -243,102 +351,9 @@ async def get_report_detail(
     """获取报告详情"""
     try:
         logger.info(f"🔍 获取报告详情: {report_id}")
-
-        db = get_mongo_db()
-
-        # 支持 ObjectId / analysis_id / task_id
-        query = _build_report_query(report_id)
-        doc = await db.analysis_reports.find_one(query)
-
-        if not doc:
-            # 兜底：从 analysis_tasks.result 中还原报告详情
-            logger.info(f"⚠️ 未在analysis_reports找到，尝试从analysis_tasks还原: {report_id}")
-            tasks_doc = await db.analysis_tasks.find_one(
-                {"$or": [{"task_id": report_id}, {"result.analysis_id": report_id}]},
-                {"result": 1, "task_id": 1, "stock_code": 1, "created_at": 1, "completed_at": 1}
-            )
-            if not tasks_doc or not tasks_doc.get("result"):
-                raise HTTPException(status_code=404, detail="报告不存在")
-
-            r = tasks_doc["result"] or {}
-            created_at = tasks_doc.get("created_at")
-            updated_at = tasks_doc.get("completed_at") or created_at
-
-            # 转换时区：数据库中是 UTC 时间，转换为 UTC+8
-            created_at_tz = to_config_tz(created_at)
-            updated_at_tz = to_config_tz(updated_at)
-
-            def to_iso(x):
-                if hasattr(x, "isoformat"):
-                    return x.isoformat()
-                return x or ""
-
-            stock_symbol = r.get("stock_symbol", r.get("stock_code", tasks_doc.get("stock_code", "")))
-            stock_name = r.get("stock_name")
-            if not stock_name:
-                stock_name = get_stock_name(stock_symbol)
-
-            report = {
-                "id": tasks_doc.get("task_id", report_id),
-                "analysis_id": r.get("analysis_id", ""),
-                "stock_symbol": stock_symbol,
-                "stock_name": stock_name,  # 🔥 添加股票名称字段
-                "model_info": r.get("model_info", "Unknown"),  # 🔥 添加模型信息字段
-                "analysis_date": r.get("analysis_date", ""),
-                "status": r.get("status", "completed"),
-                "created_at": to_iso(created_at_tz),
-                "updated_at": to_iso(updated_at_tz),
-                "analysts": r.get("analysts", []),
-                "research_depth": r.get("research_depth", 1),
-                "summary": r.get("summary", ""),
-                "reports": r.get("reports", {}),
-                "source": "analysis_tasks",
-                "task_id": tasks_doc.get("task_id", report_id),
-                "recommendation": r.get("recommendation", ""),
-                "confidence_score": r.get("confidence_score", 0.0),
-                "risk_level": r.get("risk_level", "中等"),
-                "key_points": r.get("key_points", []),
-                "execution_time": r.get("execution_time", 0),
-                "tokens_used": r.get("tokens_used", 0)
-            }
-        else:
-            # 转换为详细格式（analysis_reports 命中）
-            stock_symbol = doc.get("stock_symbol", "")
-            stock_name = doc.get("stock_name")
-            if not stock_name:
-                stock_name = get_stock_name(stock_symbol)
-
-            # 获取时间（数据库中是 UTC 时间，需要转换为 UTC+8）
-            created_at = doc.get("created_at", datetime.utcnow())
-            updated_at = doc.get("updated_at", datetime.utcnow())
-
-            # 转换时区：数据库中是 UTC 时间，转换为 UTC+8
-            created_at_tz = to_config_tz(created_at)
-            updated_at_tz = to_config_tz(updated_at)
-
-            report = {
-                "id": str(doc["_id"]),
-                "analysis_id": doc.get("analysis_id", ""),
-                "stock_symbol": stock_symbol,
-                "stock_name": stock_name,  # 🔥 添加股票名称字段
-                "model_info": doc.get("model_info", "Unknown"),  # 🔥 添加模型信息字段
-                "analysis_date": doc.get("analysis_date", ""),
-                "status": doc.get("status", "completed"),
-                "created_at": created_at_tz.isoformat() if created_at_tz else str(created_at),
-                "updated_at": updated_at_tz.isoformat() if updated_at_tz else str(updated_at),
-                "analysts": doc.get("analysts", []),
-                "research_depth": doc.get("research_depth", 1),
-                "summary": doc.get("summary", ""),
-                "reports": doc.get("reports", {}),
-                "source": doc.get("source", "unknown"),
-                "task_id": doc.get("task_id", ""),
-                "recommendation": doc.get("recommendation", ""),
-                "confidence_score": doc.get("confidence_score", 0.0),
-                "risk_level": doc.get("risk_level", "中等"),
-                "key_points": doc.get("key_points", []),
-                "execution_time": doc.get("execution_time", 0),
-                "tokens_used": doc.get("tokens_used", 0)
-            }
+        report = await find_serialized_report(report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="报告不存在")
 
         return {
             "success": True,
