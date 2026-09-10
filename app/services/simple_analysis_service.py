@@ -1084,6 +1084,18 @@ class SimpleAnalysisService:
             # 同步更新MongoDB状态为完成
             await self._update_task_status(task_id, AnalysisStatus.COMPLETED, 100)
 
+            share_path = None
+            try:
+                from app.services.analysis_complete_notify import publish_analysis_success
+                share_path = await publish_analysis_success(
+                    task_id=task_id,
+                    user_id=str(user_id),
+                    result=result if isinstance(result, dict) else {},
+                    stock_code=stock_code or getattr(request, "stock_code", "") or "",
+                )
+            except Exception as share_err:
+                logger.warning(f"⚠️ 分析完成自动分享/飞书回推失败(忽略): {share_err}")
+
             # 创建通知：分析完成（方案B：REST+SSE）
             try:
                 from app.services.notifications_service import get_notifications_service
@@ -1095,7 +1107,7 @@ class SimpleAnalysisService:
                         type='analysis',
                         title=f"{request.stock_code} 分析完成",
                         content=summary,
-                        link=f"/stocks/{request.stock_code}",
+                        link=share_path or f"/stocks/{request.stock_code}",
                         source='analysis'
                     )
                 )
@@ -1144,6 +1156,13 @@ class SimpleAnalysisService:
 
             # 同步更新MongoDB状态为失败
             await self._update_task_status(task_id, AnalysisStatus.FAILED, 0, user_friendly_error)
+
+            try:
+                from app.services.analysis_complete_notify import publish_analysis_failure
+                fail_code = stock_code or getattr(request, "stock_code", "") or ""
+                await publish_analysis_failure(fail_code, user_friendly_error)
+            except Exception as feishu_err:
+                logger.warning(f"⚠️ 飞书分析失败回推失败(忽略): {feishu_err}")
         finally:
             # 清理进度跟踪器缓存
             if task_id in self._progress_trackers:

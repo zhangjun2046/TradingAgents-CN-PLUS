@@ -141,6 +141,11 @@ class Settings(BaseSettings):
     STOCK_DATA_API_URL: str = Field(default="")
     STOCK_DATA_API_KEY: str = Field(default="")
 
+    # 公开站点与飞书回推（分析完成自动分享）
+    PUBLIC_APP_URL: str = Field(default="http://118.144.76.8:3000")
+    FEISHU_WEBHOOK_URL: str = Field(default="")
+    FEISHU_WEBHOOK_SECRET: str = Field(default="")
+
     # SSE 配置
     SSE_POLL_TIMEOUT_SECONDS: float = Field(default=1.0)
     SSE_HEARTBEAT_INTERVAL_SECONDS: int = Field(default=10)
