@@ -5,6 +5,12 @@
 </template>
 
 <script setup lang="ts">
+import { onShow } from "@dcloudio/uni-app";
+import { ensureLogin } from "@/utils/guard";
+
+onShow(() => {
+  ensureLogin("/pages/reports/list");
+});
 </script>
 
 <style lang="scss" scoped></style>

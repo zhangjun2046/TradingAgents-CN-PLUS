@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onLaunch, onShow, onHide } from "@dcloudio/uni-app";
+import { installAuthInterceptors } from "@/utils/guard";
 
 onLaunch(() => {
+  installAuthInterceptors();
   console.info("H5 App Launch");
 });
 onShow(() => {
