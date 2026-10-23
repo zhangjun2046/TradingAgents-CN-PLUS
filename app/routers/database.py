@@ -11,11 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 from app.core.database import get_mongo_db, get_redis_client
 from app.services.database_service import DatabaseService
 
-router = APIRouter(prefix="/database", tags=["数据库管理"])
+router = APIRouter(prefix="/database", tags=["数据库管理"], dependencies=[Depends(require_admin)])
 logger = logging.getLogger("webapi")
 
 # 请求模型

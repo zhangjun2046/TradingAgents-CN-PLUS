@@ -35,7 +35,7 @@
 | P1.1 用户手机号字段与索引迁移 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#3](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/3) | 手机号稀疏唯一索引 + 邮箱部分唯一索引；pytest 通过；admin 登录正常；模型 grok-4.6 |
 | P1.2 短信通道（mock）+ SpecCaptcha + 验证码 + 限流 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5) | v1.0 流程最后一个单元；B 已审共享文件；`tests/test_auth_sms.py` 13 通过 |
 | P1.3 注册（含密码）/ 手机号登录 / 验证码登录 / 忘记密码 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#9](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/9) | v1.1 起第一个单元；注册/双登录/重置密码 pytest 通过；含验证码 Redis 回退修复 |
-| P1.4 管理员接口收紧 + 公开模型接口 | A | `line/auth` | 待启动 | — | — | 按契约提供 `require_admin` 与公开模型接口；B 的 P1.6、P3.3 用桩实现，不等待本单元 |
+| P1.4 管理员接口收紧 + 公开模型接口 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#11](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/11) | `require_admin` + 公开模型接口与 7.3 契约一致；交接文档 `Backend-API-Auth.md` |
 | P2.1 PC 登录 / 注册 / 忘记密码 / 协议页 | A | `line/auth` | 待启动 | — | — | — |
 | P2.2 PC 菜单权限 + 路由守卫 + 用户手机号 | A | `line/auth` | 待启动 | — | — | — |
 | P3.2 H5 账号页面 | A | `line/auth` | 待启动 | — | — | B 的 P3.1 已在切线前合入，`line/auth` 自带 H5 骨架 |
