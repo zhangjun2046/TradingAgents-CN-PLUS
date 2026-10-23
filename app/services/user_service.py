@@ -162,6 +162,8 @@ class UserService:
                 user_doc["email"] = email
             if phone:
                 user_doc["phone"] = phone
+                user_doc["phone_verified_at"] = datetime.utcnow()
+                user_doc["is_verified"] = True
             if getattr(user_data, "agreed_terms_at", None):
                 user_doc["agreed_terms_at"] = user_data.agreed_terms_at
 
@@ -183,12 +185,14 @@ class UserService:
         try:
             logger.info(f"🔍 [authenticate_user] 开始认证用户: {username}")
 
-            # 查找用户
+            # 先按用户名查，未命中且像手机号时再按 phone 查
             user_doc = self.users_collection.find_one({"username": username})
+            if not user_doc and str(username).isdigit() and len(str(username)) == 11:
+                user_doc = self.users_collection.find_one({"phone": username})
             logger.info(f"🔍 [authenticate_user] 数据库查询结果: {'找到用户' if user_doc else '用户不存在'}")
 
             if not user_doc:
-                logger.warning(f"❌ [authenticate_user] 用户不存在: {username}")
+                logger.warning("❌ [authenticate_user] 用户不存在")
                 return None
 
             logger.info(f"🔍 [authenticate_user] 用户信息: username={user_doc.get('username')}, email={user_doc.get('email')}, is_active={user_doc.get('is_active')}")
@@ -339,8 +343,9 @@ class UserService:
         """重置密码（管理员操作）"""
         try:
             new_hashed_password = self.hash_password(new_password)
+            query = {"username": username}
             result = self.users_collection.update_one(
-                {"username": username},
+                query,
                 {
                     "$set": {
                         "hashed_password": new_hashed_password,
@@ -348,12 +353,22 @@ class UserService:
                     }
                 }
             )
-            
+            if result.modified_count == 0 and str(username).isdigit() and len(str(username)) == 11:
+                result = self.users_collection.update_one(
+                    {"phone": username},
+                    {
+                        "$set": {
+                            "hashed_password": new_hashed_password,
+                            "updated_at": datetime.utcnow()
+                        }
+                    }
+                )
+
             if result.modified_count > 0:
-                logger.info(f"✅ 密码重置成功: {username}")
+                logger.info("密码重置成功")
                 return True
             else:
-                logger.error(f"❌ 密码重置失败: {username}")
+                logger.error("密码重置失败")
                 return False
                 
         except Exception as e:
