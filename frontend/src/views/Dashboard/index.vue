@@ -291,8 +291,8 @@
           </div>
         </el-card>
 
-        <!-- 多数据源同步 -->
-        <MultiSourceSyncCard style="margin-top: 24px;" />
+        <!-- 多数据源同步（管理接口，仅管理员） -->
+        <MultiSourceSyncCard v-if="authStore.isAdmin" style="margin-top: 24px;" />
       </el-col>
     </el-row>
   </div>

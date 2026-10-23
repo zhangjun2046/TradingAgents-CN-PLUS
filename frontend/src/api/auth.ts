@@ -63,5 +63,8 @@ export const authApi = {
 
   /** 管理员重置他人密码（与忘记密码接口不同） */
   resetPassword: (username: string, new_password: string) =>
-    ApiClient.post('/api/auth/reset-password', { username, new_password })
+    ApiClient.post('/api/auth/reset-password', { username, new_password }),
+
+  listUsers: () =>
+    ApiClient.get<{ users: User[]; total: number }>('/api/auth/users')
 }
