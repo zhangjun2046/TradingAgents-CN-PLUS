@@ -233,6 +233,19 @@ class UserService:
         except Exception as e:
             logger.error(f"❌ 获取用户失败: {e}")
             return None
+
+    async def get_user_by_phone(self, phone: str) -> Optional[User]:
+        """根据手机号获取用户（P1.2 发短信场景校验）。"""
+        if not phone:
+            return None
+        try:
+            user_doc = self.users_collection.find_one({"phone": phone})
+            if user_doc:
+                return User(**user_doc)
+            return None
+        except Exception as e:
+            logger.error(f"❌ 按手机号获取用户失败: {e}")
+            return None
     
     async def get_user_by_id(self, user_id: str) -> Optional[User]:
         """根据用户ID获取用户"""

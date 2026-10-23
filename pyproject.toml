@@ -24,6 +24,8 @@ dependencies = [
     # 认证和安全
     "PyJWT>=2.0.0",
     "bcrypt>=4.0.0",
+    "easy-captcha-python>=1.0.0",
+    "tencentcloud-sdk-python>=3.0.0",
 
     # 任务调度和异步
     "apscheduler>=3.10.0",
