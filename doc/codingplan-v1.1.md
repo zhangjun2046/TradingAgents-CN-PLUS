@@ -438,7 +438,7 @@ flowchart LR
 | 1 | 合入已批准的存量 PR | B | P3.1（[#1](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/1)）、P1.5（[#2](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/2)）按 v1.0 流程 Squash 合入 `dev/h5-1.0` |
 | 2 | 审阅并合入 A 的存量 PR | B 审、A 合 | A 的进度文档（[#4](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/4)）与 P1.2（[#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5)）；这是最后一次跨线等待 |
 | 3 | 合入本文档 | B 提、A 审 | 以 `docs: codingplan v1.1` PR 合入 `dev/h5-1.0`，使两条线分支都自带 v1.1 |
-| 4 | 切出线分支并设置保护 | B（仓库 owner） | 第 1～3 步全部合入后，从最新 `dev/h5-1.0` 切出 `line/auth`、`line/report` 并 push；在 GitHub Settings → Branches 为 `line/*` 添加保护规则：Require a pull request before merging（**Required approvals = 0**）、禁止 force push、禁止删除 |
+| 4 | 切出线分支并设置保护 | B（仓库 owner） | 第 1～3 步全部合入后，从最新 `dev/h5-1.0` 切出 `line/auth`、`line/report` 并 push。保护规则已提前以仓库 ruleset `line-branches` 配置好（Settings → Rules → Rulesets）：对 `line/auth`、`line/report` 要求 PR 合入（**Required approvals = 0**）、禁止 force push、禁止删除 |
 | 5 | 已开工单元迁移 | 各自 | 已在旧流程下开工但未提 PR 的单元（如 B 的 P1.7、A 若已开工的 P1.3）：在功能分支上 `git merge origin/line/<本线>`，处理冲突后向本线分支提 PR；从此全部按 v1.1 执行 |
 
 ### 最终集成（两条线合入 dev/h5-1.0）
