@@ -49,7 +49,7 @@
 | P3.1 H5 工程骨架（`mobile/`） | B | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#1](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/1) | Uniapp H5 骨架 + 最简登录 + `pages.json` 一次登记全部页面；A 已审 |
 | P1.5 报告按用户隔离 + 历史回填 | B | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#2](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/2) | 报告写入 user_id + 回填脚本 + 归属校验 + seed_test_users；pytest 29 通过；模型 Composer；A 已审 |
 | P1.7 分享 30 天 + 公开字段 + 免登录导出 | B | `line/report` | 已合入本线 | 2026-10-23 | [#8](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/8) | 分享默认 30 天 + 公开字段 + 免登录导出（md/pdf/docx，限流）；交接文档 `Backend-API-Report.md`；pytest 32 通过；模型 Claude |
-| P1.6 分析任务归属校验 | B | `line/report` | 待验收 | 2026-10-23 | — | `ensure_task_access` + `_require_admin_local` 本地桩（v1.1 stub，不新建 deps.py）；`tests/test_task_access.py` 18 通过；B 线回归 63 通过；模型 Composer |
+| P1.6 分析任务归属校验 | B | `line/report` | 已合入本线 | 2026-10-23 | [#15](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/15) | `ensure_task_access` + `_require_admin_local` 本地桩（v1.1 stub，不新建 deps.py）；`tests/test_task_access.py` 18 通过；B 线回归 63 通过；模型 Sonnet 5.5 |
 | P3.3 H5 单股分析表单 | B | `line/report` | 待启动 | — | — | 调公开模型接口，404 时退回内置列表（契约结构） |
 | P3.4 H5 分析进度 + 跳转报告 | B | `line/report` | 待启动 | — | — | — |
 | P3.5 H5 我的报告列表 | B | `line/report` | 待启动 | — | — | 完成后生成交接文档 `H5-Architecture.md` |
