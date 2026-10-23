@@ -1059,7 +1059,7 @@ class SimpleAnalysisService:
             # 保存分析结果到文件和数据库
             try:
                 logger.info(f"💾 开始保存分析结果: {task_id}")
-                await self._save_analysis_results_complete(task_id, result)
+                await self._save_analysis_results_complete(task_id, result, user_id=str(user_id) if user_id is not None else None)
                 logger.info(f"✅ 分析结果保存完成: {task_id}")
             except Exception as save_error:
                 logger.error(f"❌ 保存分析结果失败: {task_id} - {save_error}")
@@ -2493,7 +2493,47 @@ class SimpleAnalysisService:
         except Exception as e:
             logger.error(f"❌ 保存分析结果失败: {task_id} - {e}")
 
-    async def _save_analysis_result_web_style(self, task_id: str, result: Dict[str, Any]):
+    async def _resolve_report_owner(
+        self,
+        db,
+        task_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """确定报告归属用户（字符串）。
+
+        优先使用调用方传入的 user_id；缺失时回退读取 analysis_tasks.user_id，
+        再回退内存任务；仍无法确定返回 None。
+        """
+        if user_id is not None and str(user_id).strip():
+            return str(user_id)
+
+        try:
+            task_doc = await db.analysis_tasks.find_one(
+                {"task_id": task_id}, {"user_id": 1, "user": 1}
+            )
+            if task_doc:
+                owner = task_doc.get("user_id", task_doc.get("user"))
+                if owner is not None and str(owner).strip():
+                    return str(owner)
+        except Exception as e:
+            logger.warning(f"⚠️ 读取任务归属失败: {task_id} - {e}")
+
+        try:
+            task_state = await self.memory_manager.get_task(task_id)
+            owner = getattr(task_state, "user_id", None) if task_state else None
+            if owner is not None and str(owner).strip():
+                return str(owner)
+        except Exception as e:
+            logger.warning(f"⚠️ 读取内存任务归属失败: {task_id} - {e}")
+
+        return None
+
+    async def _save_analysis_result_web_style(
+        self,
+        task_id: str,
+        result: Dict[str, Any],
+        user_id: Optional[str] = None,
+    ):
         """保存分析结果 - 采用web目录的方式，保存到analysis_reports集合"""
         try:
             db = get_mongo_db()
@@ -2732,6 +2772,15 @@ class SimpleAnalysisService:
                 "performance_metrics": result.get("performance_metrics", {})
             }
 
+            # 报告归属（P1.5）：user_id 统一存字符串；无法确定归属时仅管理员可见
+            owner_id = await self._resolve_report_owner(db, task_id, user_id)
+            document["user_id"] = owner_id
+            if owner_id is None:
+                document["owner_unknown"] = True
+            logger.info(
+                f"👤 报告归属: task_id={task_id}, user_id={owner_id}, owner_unknown={owner_id is None}"
+            )
+
             # 保存到analysis_reports集合（与web目录保持一致）
             result_insert = await db.analysis_reports.insert_one(document)
 
@@ -2781,8 +2830,16 @@ class SimpleAnalysisService:
             except Exception as fallback_error:
                 logger.error(f"❌ 简化保存也失败: {task_id} - {fallback_error}")
 
-    async def _save_analysis_results_complete(self, task_id: str, result: Dict[str, Any]):
-        """完整的分析结果保存 - 完全采用web目录的双重保存方式"""
+    async def _save_analysis_results_complete(
+        self,
+        task_id: str,
+        result: Dict[str, Any],
+        user_id: Optional[str] = None,
+    ):
+        """完整的分析结果保存 - 完全采用web目录的双重保存方式
+
+        user_id: 报告归属用户（字符串）；缺省时由 _resolve_report_owner 回退查询任务记录。
+        """
         try:
             # 调试：打印result中的所有键
             logger.info(f"🔍 [调试] result中的所有键: {list(result.keys())}")
@@ -2805,7 +2862,7 @@ class SimpleAnalysisService:
 
             # 2. 保存分析报告到数据库
             logger.info(f"🗄️ [数据库保存] 开始保存分析报告到数据库")
-            await self._save_analysis_result_web_style(task_id, result)
+            await self._save_analysis_result_web_style(task_id, result, user_id=user_id)
             logger.info(f"✅ [数据库保存] 分析报告已成功保存到数据库")
 
             # 3. 记录保存结果
@@ -2818,7 +2875,7 @@ class SimpleAnalysisService:
             logger.error(f"❌ [完整保存] 保存分析报告时发生错误: {str(save_error)}")
             # 降级到仅数据库保存
             try:
-                await self._save_analysis_result_web_style(task_id, result)
+                await self._save_analysis_result_web_style(task_id, result, user_id=user_id)
                 logger.info(f"💾 降级保存成功 (仅数据库): {task_id}")
             except Exception as fallback_error:
                 logger.error(f"❌ 降级保存也失败: {task_id} - {fallback_error}")
