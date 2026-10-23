@@ -7,6 +7,8 @@ declare module 'vue-router' {
     title?: string
     // 是否需要认证
     requiresAuth?: boolean
+    // 仅管理员可访问
+    requiresAdmin?: boolean
     // 菜单图标名称（与 Element Plus 图标名称一致）
     icon?: string
     // 是否在菜单中隐藏
