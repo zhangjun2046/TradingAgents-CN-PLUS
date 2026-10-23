@@ -356,7 +356,50 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '登录',
       hideInMenu: true,
+      requiresAuth: false,
       transition: 'fade'
+    }
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/Auth/Register.vue'),
+    meta: {
+      title: '注册',
+      hideInMenu: true,
+      requiresAuth: false,
+      transition: 'fade'
+    }
+  },
+  {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/views/Auth/ForgotPassword.vue'),
+    meta: {
+      title: '忘记密码',
+      hideInMenu: true,
+      requiresAuth: false,
+      transition: 'fade'
+    }
+  },
+  {
+    path: '/legal/agreement',
+    name: 'LegalAgreement',
+    component: () => import('@/views/Legal/Agreement.vue'),
+    meta: {
+      title: '用户协议',
+      hideInMenu: true,
+      requiresAuth: false
+    }
+  },
+  {
+    path: '/legal/privacy',
+    name: 'LegalPrivacy',
+    component: () => import('@/views/Legal/Privacy.vue'),
+    meta: {
+      title: '隐私政策',
+      hideInMenu: true,
+      requiresAuth: false
     }
   },
 
