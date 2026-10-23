@@ -6,7 +6,8 @@ import hashlib
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
 
 from app.core.config import settings
@@ -31,6 +32,51 @@ class UserService:
         self.client = MongoClient(settings.MONGO_URI)
         self.db = self.client[settings.MONGO_DB]
         self.users_collection = self.db.users
+
+    @staticmethod
+    def _index_keys_match(existing_key, wanted) -> bool:
+        def _norm(pairs):
+            return [(str(field), int(direction)) for field, direction in pairs]
+
+        return _norm(existing_key) == _norm(wanted)
+
+    def _ensure_index(self, collection, keys, **kwargs) -> None:
+        """按名称或字段组合幂等建索引；字段已存在但名字不同时跳过。"""
+        name = kwargs.get("name")
+        info = collection.index_information()
+        if name and name in info:
+            return
+        for spec_name, spec in info.items():
+            if self._index_keys_match(spec.get("key") or [], keys):
+                logger.info(
+                    "索引字段已存在，跳过创建 %s（现有名: %s）",
+                    name,
+                    spec_name,
+                )
+                return
+        collection.create_index(keys, **kwargs)
+
+    def ensure_indexes(self) -> None:
+        """幂等创建用户 / 报告 / 任务相关索引（P1.1）。"""
+        self._ensure_index(
+            self.users_collection,
+            [("phone", ASCENDING)],
+            unique=True,
+            sparse=True,
+            name="uniq_phone",
+        )
+        self._ensure_index(
+            self.db.analysis_reports,
+            [("user_id", ASCENDING), ("created_at", DESCENDING)],
+            name="user_reports",
+        )
+        self._ensure_index(
+            self.db.analysis_tasks,
+            [("task_id", ASCENDING)],
+            unique=True,
+            name="uniq_task_id",
+        )
+        logger.info("✅ P1.1 用户相关索引已就绪: uniq_phone / user_reports / uniq_task_id")
 
     def close(self):
         """关闭数据库连接"""
@@ -61,17 +107,24 @@ class UserService:
             if existing_user:
                 logger.warning(f"用户名已存在: {user_data.username}")
                 return None
-            
-            # 检查邮箱是否已存在
-            existing_email = self.users_collection.find_one({"email": user_data.email})
-            if existing_email:
-                logger.warning(f"邮箱已存在: {user_data.email}")
-                return None
-            
-            # 创建用户文档
+
+            phone = getattr(user_data, "phone", None)
+            if phone:
+                existing_phone = self.users_collection.find_one({"phone": phone})
+                if existing_phone:
+                    logger.warning(f"手机号已存在: {phone}")
+                    return None
+
+            email = getattr(user_data, "email", None)
+            if email:
+                existing_email = self.users_collection.find_one({"email": email})
+                if existing_email:
+                    logger.warning(f"邮箱已存在: {email}")
+                    return None
+
+            # 创建用户文档（手机号用户不写 email 字段，避免旧邮箱唯一索引冲突）
             user_doc = {
                 "username": user_data.username,
-                "email": user_data.email,
                 "hashed_password": self.hash_password(user_data.password),
                 "is_active": True,
                 "is_verified": False,
@@ -105,13 +158,22 @@ class UserService:
                 "failed_analyses": 0,
                 "favorite_stocks": []
             }
-            
+            if email:
+                user_doc["email"] = email
+            if phone:
+                user_doc["phone"] = phone
+            if getattr(user_data, "agreed_terms_at", None):
+                user_doc["agreed_terms_at"] = user_data.agreed_terms_at
+
             result = self.users_collection.insert_one(user_doc)
             user_doc["_id"] = result.inserted_id
             
             logger.info(f"✅ 用户创建成功: {user_data.username}")
             return User(**user_doc)
-            
+
+        except DuplicateKeyError as e:
+            logger.warning(f"创建用户唯一约束冲突: {e}")
+            return None
         except Exception as e:
             logger.error(f"❌ 创建用户失败: {e}")
             return None
@@ -346,6 +408,7 @@ class UserService:
                     id=str(user.id),
                     username=user.username,
                     email=user.email,
+                    phone=user.phone,
                     is_active=user.is_active,
                     is_verified=user.is_verified,
                     created_at=user.created_at,

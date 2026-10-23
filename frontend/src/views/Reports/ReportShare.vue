@@ -403,3 +403,15 @@ onMounted(() => {
   }
 }
 </style>
+
+<style lang="scss">
+/* 压过 html.dark h1–h6 { color: #fff !important }，分享页固定浅色底 */
+html.dark .report-share h1,
+html.dark .report-share h2,
+html.dark .report-share h3,
+html.dark .report-share h4,
+html.dark .report-share h5,
+html.dark .report-share h6 {
+  color: #1f2329 !important;
+}
+</style>
