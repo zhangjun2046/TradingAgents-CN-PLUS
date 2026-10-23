@@ -1,0 +1,30 @@
+// 与 PC frontend/src/styles/variables.scss 对齐
+$primary-color: #409eff;
+$success-color: #67c23a;
+$warning-color: #e6a23c;
+$danger-color: #f56c6c;
+$info-color: #909399;
+
+$text-primary: #303133;
+$text-regular: #606266;
+$text-secondary: #909399;
+
+$border-radius-sm: 4px;
+$border-radius-lg: 8px;
+
+$font-size-xs: 12px;
+$font-size-sm: 14px;
+$font-size-md: 16px;
+$font-size-lg: 18px;
+
+:root {
+  --ha-color-primary: #{$primary-color};
+  --ha-color-success: #{$success-color};
+  --ha-color-warning: #{$warning-color};
+  --ha-color-danger: #{$danger-color};
+  --ha-text-primary: #{$text-primary};
+  --ha-text-regular: #{$text-regular};
+  --ha-text-secondary: #{$text-secondary};
+  --ha-radius: #{$border-radius-lg};
+  --ha-radius-sm: #{$border-radius-sm};
+}
