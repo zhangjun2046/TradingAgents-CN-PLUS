@@ -33,8 +33,8 @@
 |------|--------|----------|------|----------|----|------|
 | P0.1 环境核验 + 磁盘约束 + `.gitignore` + 基线提交 + 集成分支 | A | `main` | 已通过 | 2026-10-22 | 基线提交 `c991581` | `doc/` 纳入 Git、忽略 `.cursor-logs/`；`dev/h5-1.0` 已建 |
 | P1.1 用户手机号字段与索引迁移 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#3](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/3) | 手机号稀疏唯一索引 + 邮箱部分唯一索引；pytest 通过；admin 登录正常；模型 grok-4.6 |
-| P1.2 短信通道（mock）+ SpecCaptcha + 验证码 + 限流 | A | `dev/h5-1.0` | 待验收 | 2026-10-23 | [#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5) | v1.0 流程最后一个单元；B 已审共享文件；`tests/test_auth_sms.py` 13 通过 |
-| P1.3 注册（含密码）/ 手机号登录 / 验证码登录 / 忘记密码 | A | `line/auth` | 待启动 | — | — | v1.1 起第一个单元 |
+| P1.2 短信通道（mock）+ SpecCaptcha + 验证码 + 限流 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5) | v1.0 流程最后一个单元；B 已审共享文件；`tests/test_auth_sms.py` 13 通过 |
+| P1.3 注册（含密码）/ 手机号登录 / 验证码登录 / 忘记密码 | A | `line/auth` | 待合入 | 2026-10-23 | — | v1.1 起第一个单元；注册/双登录/重置密码 pytest 通过；含验证码 Redis 回退修复 |
 | P1.4 管理员接口收紧 + 公开模型接口 | A | `line/auth` | 待启动 | — | — | 按契约提供 `require_admin` 与公开模型接口；B 的 P1.6、P3.3 用桩实现，不等待本单元 |
 | P2.1 PC 登录 / 注册 / 忘记密码 / 协议页 | A | `line/auth` | 待启动 | — | — | — |
 | P2.2 PC 菜单权限 + 路由守卫 + 用户手机号 | A | `line/auth` | 待启动 | — | — | — |
