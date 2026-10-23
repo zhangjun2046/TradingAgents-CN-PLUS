@@ -6,14 +6,15 @@
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.deps import require_admin
 from app.worker.multi_period_sync_service import get_multi_period_sync_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/multi-period-sync", tags=["多周期同步"])
+router = APIRouter(prefix="/api/multi-period-sync", tags=["多周期同步"], dependencies=[Depends(require_admin)])
 
 
 class MultiPeriodSyncRequest(BaseModel):

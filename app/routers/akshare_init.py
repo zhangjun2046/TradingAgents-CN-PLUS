@@ -13,12 +13,13 @@ from pydantic import BaseModel, Field
 from app.core.database import get_mongo_db
 from app.worker.akshare_init_service import get_akshare_init_service
 from app.worker.akshare_sync_service import get_akshare_sync_service
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 from app.utils.timezone import now_tz
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/akshare-init", tags=["AKShare初始化"])
+router = APIRouter(prefix="/api/akshare-init", tags=["AKShare初始化"], dependencies=[Depends(require_admin)])
 
 # 全局任务状态存储
 _initialization_status = {

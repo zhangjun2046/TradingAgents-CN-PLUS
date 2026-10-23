@@ -7,6 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 from app.core.response import ok
 from app.core.database import get_mongo_db
@@ -19,7 +20,7 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger("webapi")
 
-router = APIRouter(prefix="/api/stock-sync", tags=["股票数据同步"])
+router = APIRouter(prefix="/api/stock-sync", tags=["股票数据同步"], dependencies=[Depends(require_admin)])
 
 
 async def _sync_latest_to_market_quotes(symbol: str) -> None:

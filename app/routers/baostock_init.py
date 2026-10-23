@@ -7,15 +7,16 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.deps import require_admin
 from app.worker.baostock_init_service import BaoStockInitService
 from app.worker.baostock_sync_service import BaoStockSyncService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/baostock-init", tags=["BaoStock初始化"])
+router = APIRouter(prefix="/api/baostock-init", tags=["BaoStock初始化"], dependencies=[Depends(require_admin)])
 
 # 全局状态管理
 _initialization_status = {
