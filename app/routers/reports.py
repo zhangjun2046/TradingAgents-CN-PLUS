@@ -19,6 +19,7 @@ from ..services.report_share_service import (
     MAX_EXPIRES_DAYS,
     PUBLIC_NOT_FOUND,
     ReportNotFoundError,
+    build_owner_filter,
     create_or_reuse_share,
     find_serialized_report,
     get_active_share,
@@ -109,6 +110,21 @@ def _build_report_query(report_id: str) -> Dict[str, Any]:
         pass
     return {"$or": ors}
 
+async def ensure_report_access(report_id: str, user: Dict[str, Any]) -> Dict[str, Any]:
+    """校验当前用户可访问该报告并返回报告文档。
+
+    管理员可访问全部；普通用户仅限 user_id 等于自己的报告。
+    不存在或不属于自己统一返回 404，避免暴露数据是否存在。
+    """
+    db = get_mongo_db()
+    query = {**_build_report_query(report_id), **build_owner_filter(user)}
+    report = await db.analysis_reports.find_one(query)
+    if not report:
+        logger.info(f"report_access_denied report={report_id} user={user.get('id')}")
+        raise HTTPException(status_code=404, detail="报告不存在")
+    return report
+
+
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 class ReportFilter(BaseModel):
@@ -150,8 +166,8 @@ async def get_reports_list(
 
         db = get_mongo_db()
 
-        # 构建查询条件
-        query = {}
+        # 构建查询条件（普通用户仅能看到自己的报告，管理员不限）
+        query = dict(build_owner_filter(user))
 
         # 搜索关键词
         if search_keyword:
@@ -284,7 +300,7 @@ async def create_report_share(
             user,
             expires_days=body.expires_days,
             regenerate=body.regenerate,
-        )
+        )  # create_or_reuse_share 内部按 user 做归属校验
         return {
             "success": True,
             "data": data,
@@ -304,10 +320,10 @@ async def get_report_share(
 ):
     """查询当前有效的分享链接"""
     try:
-        report = await find_serialized_report(report_id)
+        report = await find_serialized_report(report_id, user=user)
         if not report:
             raise HTTPException(status_code=404, detail="报告不存在")
-        data = await get_active_share(report_id)
+        data = await get_active_share(report_id, user=user)
         return {
             "success": True,
             "data": data,
@@ -327,10 +343,10 @@ async def delete_report_share(
 ):
     """撤销该报告全部有效分享链接"""
     try:
-        report = await find_serialized_report(report_id)
+        report = await find_serialized_report(report_id, user=user)
         if not report:
             raise HTTPException(status_code=404, detail="报告不存在")
-        count = await revoke_shares(report_id)
+        count = await revoke_shares(report_id, user=user)
         return {
             "success": True,
             "data": {"revoked": count},
@@ -351,7 +367,7 @@ async def get_report_detail(
     """获取报告详情"""
     try:
         logger.info(f"🔍 获取报告详情: {report_id}")
-        report = await find_serialized_report(report_id)
+        report = await find_serialized_report(report_id, user=user)
         if not report:
             raise HTTPException(status_code=404, detail="报告不存在")
 
@@ -377,14 +393,8 @@ async def get_report_module_content(
     try:
         logger.info(f"🔍 获取报告模块内容: {report_id}/{module}")
 
-        db = get_mongo_db()
-
-        # 查询报告（支持多种ID）
-        query = _build_report_query(report_id)
-        doc = await db.analysis_reports.find_one(query)
-
-        if not doc:
-            raise HTTPException(status_code=404, detail="报告不存在")
+        # 查询报告（支持多种ID）并校验归属
+        doc = await ensure_report_access(report_id, user)
 
         reports = doc.get("reports", {})
 
@@ -420,9 +430,9 @@ async def delete_report(
 
         db = get_mongo_db()
 
-        # 查询报告（支持多种ID）
-        query = _build_report_query(report_id)
-        result = await db.analysis_reports.delete_one(query)
+        # 先校验归属，再按文档主键删除（避免条件歧义误删他人报告）
+        doc = await ensure_report_access(report_id, user)
+        result = await db.analysis_reports.delete_one({"_id": doc["_id"]})
 
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="报告不存在")
@@ -457,14 +467,8 @@ async def download_report(
     try:
         logger.info(f"📥 下载报告: {report_id}, 格式: {format}")
 
-        db = get_mongo_db()
-
-        # 查询报告（支持多种ID）
-        query = _build_report_query(report_id)
-        doc = await db.analysis_reports.find_one(query)
-
-        if not doc:
-            raise HTTPException(status_code=404, detail="报告不存在")
+        # 查询报告（支持多种ID）并校验归属
+        doc = await ensure_report_access(report_id, user)
 
         stock_symbol = doc.get("stock_symbol", "unknown")
         analysis_date = doc.get("analysis_date", datetime.now().strftime("%Y-%m-%d"))

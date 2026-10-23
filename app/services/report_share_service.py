@@ -177,18 +177,48 @@ def _build_report_query(report_id: str) -> Dict[str, Any]:
     return {"$or": ors}
 
 
-async def find_serialized_report(report_id: str, db=None) -> Optional[Dict[str, Any]]:
+def build_owner_filter(user: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """按当前用户构造报告归属过滤条件。
+
+    管理员（或未传 user 的内部 / 公开分享调用）不加限制；普通用户仅能访问 user_id 等于自己的报告。
+    owner_unknown 的历史报告 user_id 为 null，普通用户永远匹配不到。
+    """
+    if user is None or user.get("is_admin"):
+        return {}
+    return {"user_id": str(user.get("id"))}
+
+
+def _task_owned_by(tasks_doc: Dict[str, Any], user: Optional[Dict[str, Any]]) -> bool:
+    """判断 analysis_tasks 记录是否属于该用户（str 比较，兼容 ObjectId / 字符串两种存法，兼容旧字段 user）。"""
+    if user is None or user.get("is_admin"):
+        return True
+    owner = tasks_doc.get("user_id", tasks_doc.get("user"))
+    return owner is not None and str(owner) == str(user.get("id"))
+
+
+async def find_serialized_report(
+    report_id: str,
+    db=None,
+    user: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """查找并序列化报告。传入 user 时做归属校验，非本人（非管理员）视同不存在。"""
     db = db if db is not None else get_mongo_db()
-    query = _build_report_query(report_id)
+    query = {**_build_report_query(report_id), **build_owner_filter(user)}
     doc = await db.analysis_reports.find_one(query)
     if doc:
         return serialize_report_from_analysis_doc(doc, report_id)
 
     tasks_doc = await db.analysis_tasks.find_one(
         {"$or": [{"task_id": report_id}, {"result.analysis_id": report_id}]},
-        {"result": 1, "task_id": 1, "stock_code": 1, "created_at": 1, "completed_at": 1},
+        {
+            "result": 1, "task_id": 1, "stock_code": 1, "created_at": 1,
+            "completed_at": 1, "user_id": 1, "user": 1,
+        },
     )
     if not tasks_doc or not tasks_doc.get("result"):
+        return None
+    if not _task_owned_by(tasks_doc, user):
+        logger.info("report_access_denied report=%s user=%s", report_id, (user or {}).get("id"))
         return None
     return serialize_report_from_task_doc(tasks_doc, report_id)
 
@@ -225,9 +255,13 @@ def _share_public_meta(share: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def get_active_share(report_id: str, db=None) -> Optional[Dict[str, Any]]:
+async def get_active_share(
+    report_id: str,
+    db=None,
+    user: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     db = db if db is not None else get_mongo_db()
-    report = await find_serialized_report(report_id, db=db)
+    report = await find_serialized_report(report_id, db=db, user=user)
     if not report:
         return None
     lookup_ids = _collect_lookup_ids(report, report_id)
@@ -244,9 +278,13 @@ async def get_active_share(report_id: str, db=None) -> Optional[Dict[str, Any]]:
     return _share_public_meta(share)
 
 
-async def revoke_shares(report_id: str, db=None) -> int:
+async def revoke_shares(
+    report_id: str,
+    db=None,
+    user: Optional[Dict[str, Any]] = None,
+) -> int:
     db = db if db is not None else get_mongo_db()
-    report = await find_serialized_report(report_id, db=db)
+    report = await find_serialized_report(report_id, db=db, user=user)
     if not report:
         return 0
     lookup_ids = _collect_lookup_ids(report, report_id)
@@ -276,14 +314,15 @@ async def create_or_reuse_share(
     if days > MAX_EXPIRES_DAYS:
         days = MAX_EXPIRES_DAYS
 
-    report = await find_serialized_report(report_id, db=db)
+    # 归属校验：非本人（非管理员）的报告视同不存在
+    report = await find_serialized_report(report_id, db=db, user=user)
     if not report:
         raise ReportNotFoundError("报告不存在")
 
     if regenerate:
-        await revoke_shares(report_id, db=db)
+        await revoke_shares(report_id, db=db, user=user)
     else:
-        existing = await get_active_share(report_id, db=db)
+        existing = await get_active_share(report_id, db=db, user=user)
         if existing:
             return existing
 
