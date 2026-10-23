@@ -25,6 +25,44 @@ from app.models.analysis import (
 router = APIRouter()
 logger = logging.getLogger("webapi")
 
+
+# v1.1 stub: replace with app.core.deps.require_admin at final integration
+async def _require_admin_local(user: dict = Depends(get_current_user)) -> dict:
+    """Allow admin users only (local stub of tech_solution 7.3 require_admin)."""
+    if not user.get("is_admin"):
+        logger.info("admin_required_denied user=%s", user.get("username"))
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+    return user
+
+
+async def ensure_task_access(task_id: str, user: dict) -> None:
+    """Raise 404 when the task does not belong to the current user (admins bypass).
+
+    归属以 MongoDB 中持久化的 analysis_tasks.user_id 为准（任务创建时写入），
+    不依赖内存结构；任务记录缺失时回退到 analysis_reports.user_id。
+    越权统一返回 404，不暴露任务是否存在（tech_solution 7.5）。
+    """
+    if user.get("is_admin"):
+        return
+
+    from app.core.database import get_mongo_db
+
+    db = get_mongo_db()
+    uid = str(user["id"])
+
+    task = await db.analysis_tasks.find_one({"task_id": task_id}, {"user_id": 1})
+    if task is not None:
+        if str(task.get("user_id")) == uid:
+            return
+    else:
+        report = await db.analysis_reports.find_one({"task_id": task_id}, {"user_id": 1})
+        if report is not None and str(report.get("user_id")) == uid:
+            return
+
+    logger.info("task_access_denied task_id=%s user=%s", task_id, uid)
+    raise HTTPException(status_code=404, detail="任务不存在")
+
+
 # 兼容性：保留原有的请求模型
 class SingleAnalyzeRequest(BaseModel):
     symbol: str
@@ -108,6 +146,8 @@ async def get_task_status_new(
     user: dict = Depends(get_current_user)
 ):
     """获取分析任务状态（新版异步实现）"""
+    # 归属校验必须在读取任何任务数据之前（越权返回 404）
+    await ensure_task_access(task_id, user)
     try:
         logger.info(f"🔍 [NEW ROUTE] 进入新版状态查询路由: {task_id}")
         logger.info(f"👤 [NEW ROUTE] 用户: {user}")
@@ -224,6 +264,8 @@ async def get_task_result(
     user: dict = Depends(get_current_user)
 ):
     """获取分析任务结果"""
+    # 归属校验必须在读取任何任务数据之前（越权返回 404）
+    await ensure_task_access(task_id, user)
     try:
         logger.info(f"🔍 [RESULT] 获取任务结果: {task_id}")
         logger.info(f"👤 [RESULT] 用户: {user}")
@@ -705,7 +747,7 @@ async def get_task_result(
 
 @router.get("/tasks/all", response_model=Dict[str, Any])
 async def list_all_tasks(
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(_require_admin_local),
     status: Optional[str] = Query(None, description="任务状态过滤"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="偏移量")
@@ -1114,16 +1156,12 @@ async def get_task_details(
 @router.get("/admin/zombie-tasks")
 async def get_zombie_tasks(
     max_running_hours: int = Query(default=2, ge=1, le=72, description="最大运行时长（小时）"),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(_require_admin_local)
 ):
     """获取僵尸任务列表（仅管理员）
 
     僵尸任务：长时间处于 processing/running/pending 状态的任务
     """
-    # 检查管理员权限
-    if user.get("username") != "admin":
-        raise HTTPException(status_code=403, detail="仅管理员可访问")
-
     try:
         svc = get_simple_analysis_service()
         zombie_tasks = await svc.get_zombie_tasks(max_running_hours)
@@ -1142,16 +1180,12 @@ async def get_zombie_tasks(
 @router.post("/admin/cleanup-zombie-tasks")
 async def cleanup_zombie_tasks(
     max_running_hours: int = Query(default=2, ge=1, le=72, description="最大运行时长（小时）"),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(_require_admin_local)
 ):
     """清理僵尸任务（仅管理员）
 
     将长时间处于 processing/running/pending 状态的任务标记为失败
     """
-    # 检查管理员权限
-    if user.get("username") != "admin":
-        raise HTTPException(status_code=403, detail="仅管理员可访问")
-
     try:
         svc = get_simple_analysis_service()
         result = await svc.cleanup_zombie_tasks(max_running_hours)
@@ -1175,6 +1209,8 @@ async def mark_task_as_failed(
 
     用于手动清理卡住的任务
     """
+    # 先校验归属再操作；放在 try 之外，避免 404 被通用异常处理改写成 500
+    await ensure_task_access(task_id, user)
     try:
         svc = get_simple_analysis_service()
 
@@ -1230,6 +1266,8 @@ async def delete_task(
 
     从内存和数据库中删除任务记录
     """
+    # 先校验归属再操作；放在 try 之外，避免 404 被通用异常处理改写成 500
+    await ensure_task_access(task_id, user)
     try:
         svc = get_simple_analysis_service()
 
