@@ -589,31 +589,12 @@ const revokeShare = async () => {
 
 const copyShareUrl = async () => {
   if (!shareUrl.value) return
-
   try {
-    if (navigator.clipboard?.writeText && window.isSecureContext) {
-      await navigator.clipboard.writeText(shareUrl.value)
-      ElMessage.success('链接已复制')
-      return
-    }
-    throw new Error('insecure-context')
+    await navigator.clipboard.writeText(shareUrl.value)
+    ElMessage.success('链接已复制')
   } catch (error) {
-    console.info('clipboard API unavailable, fallback to execCommand', error)
-    const input = document.createElement('input')
-    input.value = shareUrl.value
-    input.setAttribute('readonly', 'readonly')
-    input.style.position = 'fixed'
-    input.style.left = '-9999px'
-    document.body.appendChild(input)
-    input.select()
-    input.setSelectionRange(0, input.value.length)
-    const ok = document.execCommand('copy')
-    document.body.removeChild(input)
-    if (ok) {
-      ElMessage.success('链接已复制')
-    } else {
-      ElMessage.error('复制失败，请手动选择链接')
-    }
+    console.error('复制分享链接失败:', error)
+    ElMessage.error('复制失败，请手动选择链接')
   }
 }
 

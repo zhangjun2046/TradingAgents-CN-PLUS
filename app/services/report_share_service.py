@@ -13,15 +13,10 @@ from app.utils.timezone import to_config_tz
 
 logger = logging.getLogger("webapi")
 
-DEFAULT_EXPIRES_DAYS = 30
+DEFAULT_EXPIRES_DAYS = 7
 MAX_EXPIRES_DAYS = 365
 SHARE_COLLECTION = "report_shares"
 PUBLIC_NOT_FOUND = "报告不存在或链接已失效"
-
-# 免登录导出：同一 token 每分钟最多下载次数
-DOWNLOAD_RATE_LIMIT_PER_MINUTE = 10
-# 公开 decision 白名单字段（reasoning 等内部长文不对外）
-PUBLIC_DECISION_FIELDS = ("action", "target_price", "confidence", "risk_score")
 
 
 class ReportNotFoundError(Exception):
@@ -118,7 +113,6 @@ def serialize_report_from_analysis_doc(doc: Dict[str, Any], report_id: str) -> D
         "key_points": doc.get("key_points", []),
         "execution_time": doc.get("execution_time", 0),
         "tokens_used": doc.get("tokens_used", 0),
-        "decision": doc.get("decision") or {},
     }
 
 
@@ -153,23 +147,10 @@ def serialize_report_from_task_doc(tasks_doc: Dict[str, Any], report_id: str) ->
         "key_points": result.get("key_points", []),
         "execution_time": result.get("execution_time", 0),
         "tokens_used": result.get("tokens_used", 0),
-        "decision": result.get("decision") or {},
     }
 
 
-def _public_decision(decision: Any) -> Dict[str, Any]:
-    """decision 仅保留白名单字段，缺失的键不输出。"""
-    if not isinstance(decision, dict):
-        return {}
-    return {key: decision[key] for key in PUBLIC_DECISION_FIELDS if decision.get(key) is not None}
-
-
 def serialize_public_report(report: Dict[str, Any]) -> Dict[str, Any]:
-    """公开分享数据；不输出 model_info、tokens_used、user_id 等内部字段。
-
-    expires_at 由 get_public_report_by_token 按分享记录填入。
-    """
-    analysts = report.get("analysts") or []
     return {
         "stock_symbol": report.get("stock_symbol", ""),
         "stock_name": report.get("stock_name", ""),
@@ -180,10 +161,6 @@ def serialize_public_report(report: Dict[str, Any]) -> Dict[str, Any]:
         "confidence_score": report.get("confidence_score", 0.0),
         "summary": report.get("summary", ""),
         "key_points": report.get("key_points") or [],
-        "analysts": list(analysts) if isinstance(analysts, (list, tuple)) else [str(analysts)],
-        "research_depth": report.get("research_depth", 1),
-        "decision": _public_decision(report.get("decision")),
-        "expires_at": report.get("expires_at", ""),
         "reports": order_report_modules(report.get("reports") or {}),
     }
 
@@ -200,48 +177,18 @@ def _build_report_query(report_id: str) -> Dict[str, Any]:
     return {"$or": ors}
 
 
-def build_owner_filter(user: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """按当前用户构造报告归属过滤条件。
-
-    管理员（或未传 user 的内部 / 公开分享调用）不加限制；普通用户仅能访问 user_id 等于自己的报告。
-    owner_unknown 的历史报告 user_id 为 null，普通用户永远匹配不到。
-    """
-    if user is None or user.get("is_admin"):
-        return {}
-    return {"user_id": str(user.get("id"))}
-
-
-def _task_owned_by(tasks_doc: Dict[str, Any], user: Optional[Dict[str, Any]]) -> bool:
-    """判断 analysis_tasks 记录是否属于该用户（str 比较，兼容 ObjectId / 字符串两种存法，兼容旧字段 user）。"""
-    if user is None or user.get("is_admin"):
-        return True
-    owner = tasks_doc.get("user_id", tasks_doc.get("user"))
-    return owner is not None and str(owner) == str(user.get("id"))
-
-
-async def find_serialized_report(
-    report_id: str,
-    db=None,
-    user: Optional[Dict[str, Any]] = None,
-) -> Optional[Dict[str, Any]]:
-    """查找并序列化报告。传入 user 时做归属校验，非本人（非管理员）视同不存在。"""
+async def find_serialized_report(report_id: str, db=None) -> Optional[Dict[str, Any]]:
     db = db if db is not None else get_mongo_db()
-    query = {**_build_report_query(report_id), **build_owner_filter(user)}
+    query = _build_report_query(report_id)
     doc = await db.analysis_reports.find_one(query)
     if doc:
         return serialize_report_from_analysis_doc(doc, report_id)
 
     tasks_doc = await db.analysis_tasks.find_one(
         {"$or": [{"task_id": report_id}, {"result.analysis_id": report_id}]},
-        {
-            "result": 1, "task_id": 1, "stock_code": 1, "created_at": 1,
-            "completed_at": 1, "user_id": 1, "user": 1,
-        },
+        {"result": 1, "task_id": 1, "stock_code": 1, "created_at": 1, "completed_at": 1},
     )
     if not tasks_doc or not tasks_doc.get("result"):
-        return None
-    if not _task_owned_by(tasks_doc, user):
-        logger.info("report_access_denied report=%s user=%s", report_id, (user or {}).get("id"))
         return None
     return serialize_report_from_task_doc(tasks_doc, report_id)
 
@@ -278,13 +225,9 @@ def _share_public_meta(share: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def get_active_share(
-    report_id: str,
-    db=None,
-    user: Optional[Dict[str, Any]] = None,
-) -> Optional[Dict[str, Any]]:
+async def get_active_share(report_id: str, db=None) -> Optional[Dict[str, Any]]:
     db = db if db is not None else get_mongo_db()
-    report = await find_serialized_report(report_id, db=db, user=user)
+    report = await find_serialized_report(report_id, db=db)
     if not report:
         return None
     lookup_ids = _collect_lookup_ids(report, report_id)
@@ -301,13 +244,9 @@ async def get_active_share(
     return _share_public_meta(share)
 
 
-async def revoke_shares(
-    report_id: str,
-    db=None,
-    user: Optional[Dict[str, Any]] = None,
-) -> int:
+async def revoke_shares(report_id: str, db=None) -> int:
     db = db if db is not None else get_mongo_db()
-    report = await find_serialized_report(report_id, db=db, user=user)
+    report = await find_serialized_report(report_id, db=db)
     if not report:
         return 0
     lookup_ids = _collect_lookup_ids(report, report_id)
@@ -337,15 +276,14 @@ async def create_or_reuse_share(
     if days > MAX_EXPIRES_DAYS:
         days = MAX_EXPIRES_DAYS
 
-    # 归属校验：非本人（非管理员）的报告视同不存在
-    report = await find_serialized_report(report_id, db=db, user=user)
+    report = await find_serialized_report(report_id, db=db)
     if not report:
         raise ReportNotFoundError("报告不存在")
 
     if regenerate:
-        await revoke_shares(report_id, db=db, user=user)
+        await revoke_shares(report_id, db=db)
     else:
-        existing = await get_active_share(report_id, db=db, user=user)
+        existing = await get_active_share(report_id, db=db)
         if existing:
             return existing
 
@@ -400,40 +338,3 @@ async def get_public_report_by_token(token: str, db=None) -> Tuple[Dict[str, Any
     public_report = serialize_public_report(report)
     public_report["expires_at"] = _to_iso(share.get("expires_at"))
     return public_report, _share_public_meta(share)
-
-
-def mask_token(token: str) -> str:
-    """日志中仅保留 token 前 3 位。"""
-    return f"{(token or '')[:3]}***"
-
-
-async def check_download_rate_limit(token: str, now: Optional[datetime] = None) -> bool:
-    """同一 token 每分钟最多 DOWNLOAD_RATE_LIMIT_PER_MINUTE 次导出。
-
-    返回 True 表示放行；Redis 不可用时放行（限流是保护措施，不应阻断正常导出）。
-    """
-    now = now or datetime.utcnow()
-    key = f"share:dl:{token}:{now.strftime('%Y%m%d%H%M')}"
-    try:
-        from app.core.redis_client import get_redis
-
-        redis = get_redis()
-        count = await redis.incr(key)
-        if count == 1:
-            await redis.expire(key, 120)
-        return int(count) <= DOWNLOAD_RATE_LIMIT_PER_MINUTE
-    except Exception as exc:
-        logger.warning("share_download_rate_limit_skipped token=%s err=%s", mask_token(token), exc)
-        return True
-
-
-async def record_share_download(token: str, db=None) -> None:
-    """导出成功后累加 download_count（失败不影响下载）。"""
-    db = db if db is not None else get_mongo_db()
-    try:
-        await db[SHARE_COLLECTION].update_one(
-            {"token": token},
-            {"$inc": {"download_count": 1}},
-        )
-    except Exception as exc:
-        logger.debug("分享下载计数更新失败: %s", exc)

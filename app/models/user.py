@@ -5,8 +5,7 @@
 from datetime import datetime, timezone
 from app.utils.timezone import now_tz
 from typing import Optional, Dict, Any, Annotated, List
-import re
-from pydantic import BaseModel, Field, BeforeValidator, PlainSerializer, ConfigDict, field_serializer, field_validator
+from pydantic import BaseModel, Field, BeforeValidator, PlainSerializer, ConfigDict, field_serializer
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
 from bson import ObjectId
@@ -75,10 +74,7 @@ class User(BaseModel):
     """用户模型"""
     id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
     username: str = Field(..., min_length=3, max_length=50)
-    email: Optional[str] = Field(default=None)
-    phone: Optional[str] = Field(default=None, description="手机号，唯一（稀疏索引）")
-    phone_verified_at: Optional[datetime] = None
-    agreed_terms_at: Optional[datetime] = None
+    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
     hashed_password: str
     is_active: bool = True
     is_verified: bool = False
@@ -86,24 +82,6 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=now_tz)
     updated_at: datetime = Field(default_factory=now_tz)
     last_login: Optional[datetime] = None
-
-    @field_validator("email", mode="before")
-    @classmethod
-    def empty_email_as_none(cls, value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        if isinstance(value, str) and not value.strip():
-            return None
-        return value
-
-    @field_validator("email")
-    @classmethod
-    def validate_email_format(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        if not re.match(r"^[^@]+@[^@]+\.[^@]+$", value):
-            raise ValueError("Invalid email format")
-        return value
     preferences: UserPreferences = Field(default_factory=UserPreferences)
     
     # 配额和限制
@@ -124,10 +102,8 @@ class User(BaseModel):
 class UserCreate(BaseModel):
     """创建用户请求模型"""
     username: str = Field(..., min_length=3, max_length=50)
-    email: Optional[str] = Field(default=None)
-    phone: Optional[str] = Field(default=None)
+    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
     password: str = Field(..., min_length=6, max_length=100)
-    agreed_terms_at: Optional[datetime] = None
 
 
 class UserUpdate(BaseModel):
@@ -142,8 +118,7 @@ class UserResponse(BaseModel):
     """用户响应模型"""
     id: str
     username: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    email: str
     is_active: bool
     is_verified: bool
     created_at: datetime

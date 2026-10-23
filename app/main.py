@@ -229,12 +229,6 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
-    try:
-        from app.services.user_service import user_service as _user_service_for_indexes
-        _user_service_for_indexes.ensure_indexes()
-    except Exception as e:
-        logger.warning(f"⚠️ P1.1 用户相关索引创建失败: {e}")
-
     # 初始化默认管理员用户（如果不存在）
     try:
         from app.services.user_service import user_service
