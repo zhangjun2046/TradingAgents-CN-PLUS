@@ -61,10 +61,15 @@ async def close_redis():
 
 
 def get_redis() -> redis.Redis:
-    """获取Redis客户端实例"""
-    if redis_client is None:
-        raise RuntimeError("Redis客户端未初始化")
-    return redis_client
+    """获取Redis客户端实例。
+
+    应用 lifespan 走的是 `app.core.database` 的连接；此处未单独 init 时回退到那套客户端。
+    """
+    if redis_client is not None:
+        return redis_client
+    from app.core.database import get_redis_client
+
+    return get_redis_client()
 
 
 class RedisKeys:
