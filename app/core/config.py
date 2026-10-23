@@ -137,6 +137,24 @@ class Settings(BaseSettings):
     SESSION_EXPIRE_HOURS: int = Field(default=24)
     CSRF_SECRET: str = Field(default="change-me-csrf-secret")
 
+    # 图形验证码 / 短信（P1.2，全部来自环境变量，不入库）
+    SMS_PROVIDER: str = Field(default="mock")
+    SMS_MOCK_CODE: str = Field(default="123456")
+    SMS_SECRET_ID: str = Field(default="")
+    SMS_SECRET_KEY: str = Field(default="")
+    SMS_SDK_APP_ID: str = Field(default="")
+    SMS_SIGN_NAME: str = Field(default="")
+    SMS_TEMPLATE_ID: str = Field(default="")
+    SMS_REGION: str = Field(default="ap-guangzhou")
+    SMS_CODE_TTL_SECONDS: int = Field(default=300)
+    SMS_RESEND_INTERVAL_SECONDS: int = Field(default=60)
+    SMS_DAILY_LIMIT_PER_PHONE: int = Field(default=10)
+    SMS_HOURLY_LIMIT_PER_IP: int = Field(default=20)
+    CAPTCHA_TTL_SECONDS: int = Field(default=300)
+    CAPTCHA_LENGTH: int = Field(default=4)
+    CAPTCHA_WIDTH: int = Field(default=130)
+    CAPTCHA_HEIGHT: int = Field(default=48)
+
     # 外部服务配置
     STOCK_DATA_API_URL: str = Field(default="")
     STOCK_DATA_API_KEY: str = Field(default="")
@@ -302,6 +320,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()
+
+if str(settings.SMS_PROVIDER).lower() == "mock" and not settings.DEBUG:
+    warnings.warn(
+        "SMS_PROVIDER=mock while DEBUG=false; production should use tencent.",
+        UserWarning,
+        stacklevel=1,
+    )
 
 # 自动将代理配置设置到环境变量
 # 这样 requests 库可以直接读取 os.environ['NO_PROXY']

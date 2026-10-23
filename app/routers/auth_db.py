@@ -14,6 +14,8 @@ from app.services.user_service import user_service
 from app.models.user import UserCreate, UserUpdate
 from app.services.operation_log_service import log_operation
 from app.models.operation_log import ActionType
+from app.services.captcha_service import CaptchaError, create_captcha
+from app.services.sms_code_service import SmsFlowError, send_sms_code
 
 # 尝试导入日志管理器
 try:
@@ -65,6 +67,53 @@ class CreateUserRequest(BaseModel):
     email: str
     password: str
     is_admin: bool = False
+
+
+class SendSmsRequest(BaseModel):
+    phone: str
+    scene: str
+    platform: str
+    captcha_id: str
+    captcha_code: str
+
+
+def _auth_http_error(exc) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status,
+        detail={"code": exc.code, "message": exc.message},
+    )
+
+
+@router.get("/captcha")
+async def get_captcha():
+    """签发图形验证码（公开）。"""
+    try:
+        captcha_id, image_base64 = await create_captcha()
+    except CaptchaError as exc:
+        raise _auth_http_error(exc) from exc
+    return {
+        "success": True,
+        "data": {"captcha_id": captcha_id, "image_base64": image_base64},
+        "message": "ok",
+    }
+
+
+@router.post("/sms/send")
+async def sms_send(payload: SendSmsRequest, request: Request):
+    """发送短信验证码（公开）。Mock 不豁免图形验证。"""
+    try:
+        data = await send_sms_code(
+            phone=payload.phone,
+            scene=payload.scene,
+            platform=payload.platform,
+            captcha_id=payload.captcha_id,
+            captcha_code=payload.captcha_code,
+            request=request,
+        )
+    except SmsFlowError as exc:
+        raise _auth_http_error(exc) from exc
+    return {"success": True, "data": data, "message": "ok"}
+
 
 async def get_current_user(authorization: Optional[str] = Header(default=None)) -> dict:
     """获取当前用户信息"""
