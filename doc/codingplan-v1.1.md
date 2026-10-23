@@ -33,7 +33,7 @@
 |------|--------|----------|------|----------|----|------|
 | P0.1 环境核验 + 磁盘约束 + `.gitignore` + 基线提交 + 集成分支 | A | `main` | 已通过 | 2026-10-22 | 基线提交 `c991581` | `doc/` 纳入 Git、忽略 `.cursor-logs/`；`dev/h5-1.0` 已建 |
 | P1.1 用户手机号字段与索引迁移 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#3](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/3) | 手机号稀疏唯一索引 + 邮箱部分唯一索引；pytest 通过；admin 登录正常；模型 grok-4.6 |
-| P1.2 短信通道（mock）+ SpecCaptcha + 验证码 + 限流 | A | `dev/h5-1.0` | 待验收 | 2026-10-23 | [#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5) | v1.0 流程最后一个单元；B 已审共享文件；`tests/test_auth_sms.py` 13 通过 |
+| P1.2 短信通道（mock）+ SpecCaptcha + 验证码 + 限流 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5) | SpecCaptcha + mock 短信 + 冷却三元组；`tests/test_auth_sms.py` 通过；已进两条线分支 |
 | P1.3 注册（含密码）/ 手机号登录 / 验证码登录 / 忘记密码 | A | `line/auth` | 待启动 | — | — | v1.1 起第一个单元 |
 | P1.4 管理员接口收紧 + 公开模型接口 | A | `line/auth` | 待启动 | — | — | 按契约提供 `require_admin` 与公开模型接口；B 的 P1.6、P3.3 用桩实现，不等待本单元 |
 | P2.1 PC 登录 / 注册 / 忘记密码 / 协议页 | A | `line/auth` | 待启动 | — | — | — |
@@ -48,7 +48,7 @@
 |------|--------|----------|------|----------|----|------|
 | P3.1 H5 工程骨架（`mobile/`） | B | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#1](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/1) | Uniapp H5 骨架 + 最简登录 + `pages.json` 一次登记全部页面；A 已审 |
 | P1.5 报告按用户隔离 + 历史回填 | B | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#2](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/2) | 报告写入 user_id + 回填脚本 + 归属校验 + seed_test_users；pytest 29 通过；模型 Composer；A 已审 |
-| P1.7 分享 30 天 + 公开字段 + 免登录导出 | B | `line/report` | 进行中 | — | — | v1.1 起第一个单元；完成后生成交接文档 `Backend-API-Report.md` |
+| P1.7 分享 30 天 + 公开字段 + 免登录导出 | B | `line/report` | 待验收 | 2026-10-23 | 待开 PR → `line/report` | 分享默认 30 天 + 公开字段 + 免登录导出（md/pdf/docx，限流）；交接文档 `Backend-API-Report.md`；已合并 `origin/line/report`；模型 Claude；`feat/report/P1.7-share-export` |
 | P1.6 分析任务归属校验 | B | `line/report` | 待启动 | — | — | 管理员校验先用 `analysis.py` 内的本地桩，最终集成时换成 A 的 `require_admin` |
 | P3.3 H5 单股分析表单 | B | `line/report` | 待启动 | — | — | 调公开模型接口，404 时退回内置列表（契约结构） |
 | P3.4 H5 分析进度 + 跳转报告 | B | `line/report` | 待启动 | — | — | — |
@@ -215,8 +215,9 @@ flowchart LR
 | **本开发计划（v1.1）** | `doc/codingplan-v1.1.md` | **本文档 — 操作指引（线分支独立并行版）** |
 | 开发计划 v1.0（历史） | `doc/codingplan.md` | 切换到 v1.1 之前的流程，仅作参考，不再更新 |
 | 交接文档（开发中生成） | `doc/handoff/` | 见第五章 |
+| B 线后端接口交接文档 | `doc/handoff/Backend-API-Report.md` | 报告 / 任务 / 分享 / 免登录导出接口、归属校验规则、回填与种子账号脚本用法（P1.7 生成） |
 
-> `doc/` 整个目录纳入 Git：任一方修改文档都走 PR，对方合入后 `git pull` 即可看到最新版本。
+> `doc/` 整个目录纳入 Git：任一方修改文档都走 PR。v1.1 起对方交接文档在对方线分支上，用 `git show` 只读查看（见第五章）。
 
 ---
 
