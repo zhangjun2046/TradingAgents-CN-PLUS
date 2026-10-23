@@ -2,17 +2,19 @@
 export interface User {
   id: string
   username: string
-  email: string
+  email?: string | null
+  phone?: string | null
   avatar?: string
-  is_active: boolean
-  is_verified: boolean
+  is_active?: boolean
+  is_verified?: boolean
   is_admin: boolean
-  created_at: string
-  updated_at: string
+  roles?: string[]
+  created_at?: string
+  updated_at?: string
   last_login?: string
   
   // 用户偏好
-  preferences: UserPreferences
+  preferences?: UserPreferences
   
   // 配额和限制
   daily_quota: number
@@ -56,7 +58,7 @@ export interface LoginForm {
   captcha?: string
 }
 
-// 注册表单
+// 注册表单（旧字段保留兼容）
 export interface RegisterForm {
   username: string
   email: string
@@ -65,6 +67,28 @@ export interface RegisterForm {
   agreement: boolean
   captcha?: string
   invitation_code?: string
+}
+
+export interface PhoneRegisterForm {
+  phone: string
+  code: string
+  password: string
+  agreed: boolean
+}
+
+export type SmsScene = 'register' | 'login' | 'reset'
+
+export interface SmsSendPayload {
+  phone: string
+  scene: SmsScene
+  platform: 'h5' | 'pc'
+  captcha_id: string
+  captcha_code: string
+}
+
+export interface SmsLoginForm {
+  phone: string
+  code: string
 }
 
 // 修改密码表单
@@ -76,8 +100,15 @@ export interface ChangePasswordForm {
 
 // 重置密码表单
 export interface ResetPasswordForm {
-  email: string
-  captcha?: string
+  phone: string
+  code: string
+  new_password: string
+}
+
+export interface ResetPasswordBySmsForm {
+  phone: string
+  code: string
+  new_password: string
 }
 
 // 用户权限信息
