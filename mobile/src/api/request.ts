@@ -24,6 +24,8 @@ export class ApiError extends Error {
 type RequestOptions = UniApp.RequestOptions & {
   /** 跳过自动附带 Authorization（如登录、刷新） */
   skipAuth?: boolean;
+  /** 请求失败时不弹 toast，由调用方自行处理（默认 false） */
+  silent?: boolean;
   /** 内部：避免刷新后死循环 */
   _retried?: boolean;
 };
@@ -117,7 +119,12 @@ export function request<T>(opt: RequestOptions): Promise<T> {
       }
     }
 
-    const { skipAuth: _skipAuth, _retried: _wasRetried, ...reqOpt } = opt;
+    const {
+      skipAuth: _skipAuth,
+      silent: _silent,
+      _retried: _wasRetried,
+      ...reqOpt
+    } = opt;
     uni.request({
       ...reqOpt,
       url: `${BASE_URL}${opt.url}`,
@@ -139,6 +146,10 @@ export function request<T>(opt: RequestOptions): Promise<T> {
             body?.message ||
             body?.detail ||
             (typeof body === "string" ? body : "请求失败");
+          if (opt.silent) {
+            reject(new ApiError(String(msg), res.statusCode));
+            return;
+          }
           try {
             await toastAndReject(String(msg), res.statusCode);
           } catch (e) {
@@ -156,7 +167,9 @@ export function request<T>(opt: RequestOptions): Promise<T> {
       },
       fail: (err) => {
         const error = new ApiError("网络异常，请稍后重试", 0, err);
-        uni.showToast({ title: error.message, icon: "none" });
+        if (!opt.silent) {
+          uni.showToast({ title: error.message, icon: "none" });
+        }
         reject(error);
       },
     });
