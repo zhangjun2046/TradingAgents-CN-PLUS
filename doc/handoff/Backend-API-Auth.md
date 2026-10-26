@@ -55,7 +55,7 @@ JWT 不变：`sub = username`。手机号用户注册时 `username = phone`。
 4. 日上限按手机号（不按端拆）→ `SMS_DAILY_LIMIT`
 5. IP 限流 → `IP_RATE_LIMITED`
 6. `scene=register` 且手机号已注册 → `PHONE_REGISTERED`（captcha 已消耗，前端须刷新图形码）
-7. `scene=login` / `reset` 且未注册：接口仍返回成功但不发送（防枚举）
+7. `scene=login` / `reset` 且未注册 → `PHONE_NOT_REGISTERED`（不发送；前端提示先注册）
 
 开发默认 `SMS_PROVIDER=mock`，固定码 **`123456`**（`SMS_MOCK_CODE`）。生产不要用 mock。
 
@@ -139,6 +139,7 @@ P1.4 已套用（路由级）：`config`、`database`、`logs`、`operation_logs
 | `IP_RATE_LIMITED` | 429 | IP 限流 |
 | `SMS_CODE_INVALID` | 400 | 短信码错/过期；登录或重置时未注册也统一此码 |
 | `PHONE_REGISTERED` | 409 | 注册或发注册短信时号已占用 |
+| `PHONE_NOT_REGISTERED` | 404 | 登录/忘记密码发短信时号码未注册 |
 | `TERMS_NOT_AGREED` | 400 | `agreed` 不为 true |
 | `PASSWORD_INVALID` | 400 | 密码长度不是 6～64；此时**不消耗**短信码 |
 | `FORBIDDEN` | 403 | 非管理员打管理接口（`detail` 为字符串） |
