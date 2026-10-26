@@ -52,7 +52,7 @@
 | P1.6 分析任务归属校验 | B | `line/report` | 已合入本线 | 2026-10-23 | [#15](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/15) | `ensure_task_access` + `_require_admin_local` 本地桩（v1.1 stub，不新建 deps.py）；`tests/test_task_access.py` 18 通过；B 线回归 63 通过；模型 Sonnet 5.5 |
 | P3.3 H5 单股分析表单 | B | `line/report` | 已合入本线 | 2026-10-25 | [#17](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/17) | 表单对照原型图；公开模型接口兜底内置列表；市场文案对齐 PC；模型 Composer |
 | P3.4 H5 分析进度 + 跳转报告 | B | `line/report` | 已合入本线 | 2026-10-26 | [#25](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/25) | 3s 轮询 + 切后台暂停 + 刷新恢复；完成后分享链接跳转 `/s/{token}`；失败可重新分析；模型 Composer |
-| P3.5 H5 我的报告列表 | B | `line/report` | 待验收 | 2026-10-26 | — | 我的报告列表（分页 / 下拉刷新 / 上拉加载 / 搜索 / 市场筛选 / 空态）+ 点击复用或重建分享并跳转 `/s/{token}`；分享页加「返回报告列表」；交接文档 `H5-Architecture.md`；视觉对齐 PC；模型 DeepSeek V4.1 Flash |
+| P3.5 H5 我的报告列表 | B | `line/report` | 已合入本线 | 2026-10-26 | [#27](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/27) | 我的报告列表（分页 / 下拉刷新 / 上拉加载 / 搜索 / 市场筛选 / 空态）+ 点击复用或重建分享并跳转 `/s/{token}`；分享页加「返回报告列表」；交接文档 `H5-Architecture.md`；视觉对齐 PC；模型 DeepSeek V4.1 Flash |
 | P4.1 分享页组件拆分 + 部门 / 岗位两级页签 | B | `line/report` | 待启动 | — | — | — |
 | P4.2 岗位结论卡 + 长文折叠 | B | `line/report` | 待启动 | — | — | — |
 | P4.3 分享页图表化（置信度 / 风险 / 决策链 / 多空对比） | B | `line/report` | 待启动 | — | — | — |
