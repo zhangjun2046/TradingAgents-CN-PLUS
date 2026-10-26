@@ -33,9 +33,10 @@
                   @keyup.enter="handlePasswordLogin"
                 >
                   <template #suffix>
-                    <span class="pwd-toggle" @click.stop="showPassword = !showPassword">
-                      {{ showPassword ? '隐藏' : '显示' }}
-                    </span>
+                    <el-icon class="pwd-toggle" @click.stop="showPassword = !showPassword">
+                      <Hide v-if="showPassword" />
+                      <View v-else />
+                    </el-icon>
                   </template>
                 </el-input>
               </el-form-item>
@@ -120,6 +121,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { extractAuthError } from '@/api/auth'
+import { View, Hide } from '@element-plus/icons-vue'
 import CaptchaImage from '@/components/Auth/CaptchaImage.vue'
 import SmsCodeButton from '@/components/Auth/SmsCodeButton.vue'
 
@@ -261,9 +263,8 @@ const handleSmsLogin = async () => {
 
 .pwd-toggle {
   cursor: pointer;
-  color: var(--el-color-primary);
-  font-size: 13px;
-  user-select: none;
+  color: var(--el-text-color-secondary);
+  font-size: 16px;
 }
 
 .auth-links {
