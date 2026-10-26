@@ -43,6 +43,7 @@ function startCount(seconds: number) {
     if (remain.value <= 0 && timer) {
       clearInterval(timer);
       remain.value = 0;
+      emit("needRefresh");
     }
   }, 1000);
 }
@@ -68,7 +69,6 @@ async function send() {
     uni.showToast({ title: "验证码已发送", icon: "success" });
     startCount(Number(data.resend_after) || 60);
     emit("sent");
-    emit("needRefresh");
   } catch {
     emit("needRefresh");
   } finally {
