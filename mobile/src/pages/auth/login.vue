@@ -8,7 +8,7 @@
 
     <view class="login-form" v-if="tab === 'password'">
       <input class="login-input" v-model="username" placeholder="用户名或手机号" />
-      <input class="login-input" v-model="password" password placeholder="请输入密码" @confirm="onPasswordLogin" />
+      <PasswordInput v-model="password" placeholder="请输入密码" @confirm="onPasswordLogin" />
       <button class="ha-btn-primary login-btn" :loading="loading" @click="onPasswordLogin">登录</button>
     </view>
 
@@ -42,6 +42,7 @@ import { useAuthStore } from "@/stores/auth";
 import { goAfterLogin } from "@/utils/guard";
 import CaptchaImage from "@/components/CaptchaImage.vue";
 import SmsCodeButton from "@/components/SmsCodeButton.vue";
+import PasswordInput from "@/components/PasswordInput.vue";
 
 const auth = useAuthStore();
 const tab = ref<"password" | "sms">("password");
