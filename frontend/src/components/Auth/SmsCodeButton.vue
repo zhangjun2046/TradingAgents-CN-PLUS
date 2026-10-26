@@ -39,6 +39,7 @@ function startCount(seconds: number) {
     if (remain.value <= 0) {
       window.clearInterval(timer)
       remain.value = 0
+      emit('needRefresh')
     }
   }, 1000)
 }
@@ -60,7 +61,6 @@ async function send() {
     ElMessage.success('验证码已发送')
     startCount(Number(data.resend_after) || 60)
     emit('sent')
-    emit('needRefresh')
   } catch (error) {
     ElMessage.error(extractAuthError(error))
     emit('needRefresh')
