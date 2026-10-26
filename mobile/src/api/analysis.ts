@@ -93,3 +93,56 @@ export async function getStockName(symbol: string): Promise<string> {
     return "";
   }
 }
+
+/** 任务步骤（后端 progress tracker 的 steps 元素） */
+export interface TaskStep {
+  name: string;
+  description?: string;
+  /** pending | current | completed | failed */
+  status: string;
+}
+
+/** 任务状态（GET /api/analysis/tasks/{id}/status 的 data，字段均可能缺失） */
+export interface TaskStatusData {
+  task_id?: string;
+  /** pending | processing | running | completed | failed | cancelled */
+  status?: string;
+  /** 0-100 */
+  progress?: number;
+  message?: string;
+  /** 当前步骤索引（数字）；历史记录恢复时可能是状态字符串 */
+  current_step?: number | string;
+  current_step_name?: string;
+  current_step_description?: string;
+  /** 已耗时（秒） */
+  elapsed_time?: number;
+  /** 预计剩余（秒） */
+  remaining_time?: number;
+  steps?: TaskStep[];
+  error_message?: string;
+}
+
+/** 任务结果（GET /api/analysis/tasks/{id}/result 的 data，仅取 H5 需要的字段） */
+export interface TaskResultData {
+  analysis_id?: string | null;
+}
+
+/** 查询任务进度（需登录；静默模式，错误由调用方判定，如 404 / 网络失败） */
+export async function getTaskStatus(taskId: string): Promise<TaskStatusData> {
+  const data = await request<TaskStatusData>({
+    url: `/api/analysis/tasks/${encodeURIComponent(taskId)}/status`,
+    method: "GET",
+    silent: true,
+  });
+  return data || {};
+}
+
+/** 查询任务结果，用于取得 analysis_id（需登录；静默模式） */
+export async function getTaskResult(taskId: string): Promise<TaskResultData> {
+  const data = await request<TaskResultData>({
+    url: `/api/analysis/tasks/${encodeURIComponent(taskId)}/result`,
+    method: "GET",
+    silent: true,
+  });
+  return data || {};
+}

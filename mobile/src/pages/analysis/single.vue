@@ -1,5 +1,7 @@
 ﻿<template>
   <view class="ha-page single-page">
+    <!-- 表单视图：无进行中任务时显示 -->
+    <template v-if="showForm">
     <!-- 标题卡 -->
     <view class="intro-card">
       <view class="intro-title">单股分析</view>
@@ -120,35 +122,131 @@
         {{ submitting ? "提交中..." : "↗ 开始智能分析" }}
       </button>
     </view>
+    </template>
+
+    <!-- 进度视图：有进行中 / 已完成 / 失败的任务时显示（tech_solution 4.1.4） -->
+    <template v-else-if="analysis.meta">
+      <!-- 任务摘要 -->
+      <view class="task-card">
+        <view class="task-main">
+          <view class="task-top">
+            <text class="task-market">{{ analysis.meta.market }}</text>
+            <text class="task-title">{{ taskTitle }}</text>
+          </view>
+          <view class="task-sub">
+            基准日：{{ analysis.meta.analysisDate }} · {{ analysis.meta.depthLevel }}级{{ analysis.meta.depthName }}分析
+          </view>
+        </view>
+        <view class="task-side">
+          <text class="task-status" :class="`is-${analysis.phase}`">{{ phaseText }}</text>
+          <text class="task-reset" @click="onReconfigure">重新配置</text>
+        </view>
+      </view>
+
+      <!-- 进度（进行中 / 已完成 / 中断） -->
+      <AnalysisProgress
+        v-if="analysis.phase !== 'failed'"
+        :progress="analysis.progress"
+        :completed="analysis.phase === 'completed'"
+        :step-name="analysis.currentStepName"
+        :message="analysis.message"
+        :elapsed-seconds="analysis.elapsedSeconds"
+        :remaining-seconds="analysis.remainingSeconds"
+        :analyst-names="analysis.meta.analystNames"
+        :steps="analysis.steps"
+      />
+
+      <!-- 完成 -->
+      <view v-if="analysis.phase === 'completed'" class="result-card is-success">
+        <view class="result-icon is-success">✓</view>
+        <view class="result-title">可以查看分析报告</view>
+        <view class="result-desc">
+          {{ taskTitle }}多智能体综合研判报告已生成完毕，点击下方按钮立即跳转至报告分享页查阅完整内容。
+        </view>
+
+        <view class="share-box">
+          <view class="share-main">
+            <view class="share-label">
+              专属报告分享链接（免登录直接查阅）<template v-if="analysis.shareExpiresAt">· 有效期至 {{ analysis.shareExpiresAt.slice(0, 10) }}</template>
+            </view>
+            <view v-if="analysis.shareUrl" class="share-url">{{ analysis.shareUrl }}</view>
+            <view v-else-if="analysis.shareLoading" class="share-url is-muted">链接生成中...</view>
+            <view v-else class="share-url is-error">{{ analysis.shareError || "链接尚未生成" }}</view>
+          </view>
+          <view v-if="analysis.shareUrl" class="share-copy" @click="onCopyLink">复制</view>
+          <view v-else-if="!analysis.shareLoading" class="share-copy" @click="analysis.prepareShare()">重试</view>
+        </view>
+
+        <button class="result-btn is-success" :loading="analysis.shareLoading" @click="analysis.openReport()">
+          立即查看分析报告 ↗
+        </button>
+        <button class="result-btn is-plain" @click="onNewAnalysis">继续分析其他股票</button>
+      </view>
+
+      <!-- 失败 -->
+      <view v-else-if="analysis.phase === 'failed'" class="result-card is-danger">
+        <view class="result-icon is-danger">!</view>
+        <view class="result-title">分析未能完成</view>
+        <view class="result-desc is-error">{{ analysis.errorMessage }}</view>
+        <button class="result-btn is-danger" :loading="submitting" :disabled="submitting" @click="onRetry">
+          重新分析
+        </button>
+        <button class="result-btn is-plain" @click="onNewAnalysis">返回修改参数</button>
+      </view>
+
+      <!-- 查询中断 -->
+      <view v-else-if="analysis.phase === 'timeout'" class="result-card is-warning">
+        <view class="result-icon is-warning">?</view>
+        <template v-if="analysis.timeoutReason === 'network'">
+          <view class="result-title">网络异常</view>
+          <view class="result-desc">连续多次查询进度失败，分析任务仍在后台运行，请检查网络后继续查询。</view>
+          <button class="result-btn is-primary" @click="analysis.continuePolling()">继续查询</button>
+        </template>
+        <template v-else>
+          <view class="result-title">分析时间较长</view>
+          <view class="result-desc">本次分析已超过 30 分钟，页面不再自动查询。分析完成后可前往「分析报告」查看。</view>
+          <button class="result-btn is-primary" @click="goReports">前往分析报告</button>
+        </template>
+        <button class="result-btn is-plain" @click="onNewAnalysis">继续分析其他股票</button>
+      </view>
+
+      <view class="bottom-spacer"></view>
+    </template>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
-import { onShow } from "@dcloudio/uni-app";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { onHide, onShow } from "@dcloudio/uni-app";
 import StockCodeInput from "@/components/StockCodeInput.vue";
 import DepthSelector from "@/components/DepthSelector.vue";
 import AnalystCards from "@/components/AnalystCards.vue";
 import ModelSelect from "@/components/ModelSelect.vue";
+import AnalysisProgress from "@/components/AnalysisProgress.vue";
 import { useAuthStore } from "@/stores/auth";
+import { useAnalysisStore } from "@/stores/analysis";
 import { getPublicModels } from "@/api/config";
 import {
   buildSingleAnalysisPayload,
+  depthLevelToName,
   getStockName,
-  submitSingleAnalysis,
 } from "@/api/analysis";
 import {
-  CURRENT_TASK_KEY,
   DEFAULT_DEPTH_LEVEL,
   DEFAULT_MARKET,
   MARKETS,
   type MarketType,
 } from "@/constants/analysis";
-import { DEFAULT_ANALYST_IDS, SOCIAL_ANALYST_ID } from "@/constants/analysts";
+import {
+  ANALYSTS,
+  DEFAULT_ANALYST_IDS,
+  SOCIAL_ANALYST_ID,
+} from "@/constants/analysts";
 import type { PublicModel, PublicModelsData } from "@/constants/models";
 import { isFutureDate, today, validateStockCode } from "@/utils/validators";
 
 const auth = useAuthStore();
+const analysis = useAnalysisStore();
 
 const todayStr = today();
 
@@ -323,29 +421,134 @@ async function onSubmit() {
 
   submitting.value = true;
   try {
-    console.info("[Analysis] submit", payload);
-    const taskId = await submitSingleAnalysis(payload);
-    // P3.4 使用该键恢复进度；此处只保存，不做进度展示
-    if (typeof sessionStorage !== "undefined") {
-      sessionStorage.setItem(CURRENT_TASK_KEY, taskId);
-    }
-    console.info("[Analysis] submitted", { taskId });
-    uni.showToast({ title: "分析任务已提交", icon: "success" });
+    // 提交成功后 store 进入 running 并开始轮询，页面自动切到进度视图
+    await analysis.submit(payload, {
+      symbol: payload.symbol,
+      stockName: stockName.value,
+      market: form.market,
+      analysisDate: form.analysisDate,
+      depthName: depthLevelToName(form.depthLevel),
+      depthLevel: form.depthLevel,
+      analystNames: ANALYSTS.filter((a) => form.analystIds.includes(a.id)).map(
+        (a) => a.name
+      ),
+    });
+    scrollToTop();
   } catch (e) {
-    console.info("[Analysis] submit failed", (e as Error)?.message);
-    // 请求层已弹出错误 toast；非请求层异常（如缺少 task_id）在此提示
-    if (!(e as { statusCode?: number })?.statusCode) {
-      uni.showToast({ title: (e as Error)?.message || "提交失败", icon: "none" });
-    }
+    showSubmitError(e);
   } finally {
     submitting.value = false;
   }
 }
 
+function scrollToTop() {
+  uni.pageScrollTo({ scrollTop: 0, duration: 0 });
+}
+
+/** 请求层已弹出错误 toast；非请求层异常（如缺少 task_id）在此提示 */
+function showSubmitError(e: unknown) {
+  if (!(e as { statusCode?: number })?.statusCode) {
+    uni.showToast({ title: (e as Error)?.message || "提交失败", icon: "none" });
+  }
+}
+
+// ---------- 进度视图（P3.4） ----------
+/** 无进行中任务时显示表单；有任务（进行中 / 完成 / 失败 / 中断）时显示进度视图 */
+const showForm = computed(() => !analysis.hasTask);
+
+const taskTitle = computed(() => {
+  const meta = analysis.meta;
+  if (!meta) return "";
+  return meta.stockName ? `${meta.symbol} ${meta.stockName}` : meta.symbol;
+});
+
+const phaseText = computed(() => {
+  switch (analysis.phase) {
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "分析失败";
+    case "timeout":
+      return "查询中断";
+    default:
+      return "分析中";
+  }
+});
+
+/** 返回表单；任务仍在运行时先确认，任务不会被取消，可稍后到「分析报告」查看 */
+function onReconfigure() {
+  if (analysis.phase !== "running") {
+    onNewAnalysis();
+    return;
+  }
+  uni.showModal({
+    title: "重新配置",
+    content: "当前分析仍在进行，返回后将不再显示进度（任务不会取消，完成后可在「分析报告」查看）。确定返回吗？",
+    success: (res) => {
+      if (res.confirm) onNewAnalysis();
+    },
+  });
+}
+
+function onNewAnalysis() {
+  console.info("[Analysis] back to form");
+  analysis.reset();
+  scrollToTop();
+}
+
+async function onRetry() {
+  if (submitting.value) return;
+  submitting.value = true;
+  try {
+    await analysis.retry();
+    scrollToTop();
+  } catch (e) {
+    showSubmitError(e);
+  } finally {
+    submitting.value = false;
+  }
+}
+
+function onCopyLink() {
+  if (!analysis.shareUrl) return;
+  uni.setClipboardData({
+    data: analysis.shareUrl,
+    success: () => console.info("[Share] link copied"),
+  });
+}
+
+function goReports() {
+  uni.switchTab({ url: "/pages/reports/list" });
+}
+
+/** H5 切后台 / 锁屏时暂停轮询，回到前台立即查询一次 */
+function onVisibilityChange() {
+  if (document.hidden) {
+    analysis.pause();
+  } else if (auth.isLoggedIn) {
+    analysis.restoreOrResume();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("visibilitychange", onVisibilityChange);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+  analysis.pause();
+});
+
+onHide(() => {
+  analysis.pause();
+});
+
 onShow(() => {
   auth.hydrateFromStorage();
   console.info("[Analysis] form show", { loggedIn: auth.isLoggedIn });
   loadModels();
+  // 已登录时恢复进行中的任务（刷新 / 切回本页）
+  if (auth.isLoggedIn) analysis.restoreOrResume();
 });
 </script>
 
@@ -503,6 +706,234 @@ onShow(() => {
 
   &[disabled] {
     opacity: 0.7;
+  }
+}
+
+// ---------- 进度视图（P3.4） ----------
+.task-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.04);
+}
+
+.task-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-top {
+  display: flex;
+  align-items: center;
+}
+
+.task-market {
+  margin-right: 16rpx;
+  padding: 2rpx 14rpx;
+  border-radius: 8rpx;
+  background: #ecf5ff;
+  color: #409eff;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.task-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #303133;
+}
+
+.task-sub {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #909399;
+}
+
+.task-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
+
+.task-status {
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  background: #ecf5ff;
+  color: #409eff;
+
+  &.is-completed {
+    background: #e8f8ef;
+    color: #10b981;
+  }
+
+  &.is-failed {
+    background: #fef0f0;
+    color: #f56c6c;
+  }
+
+  &.is-timeout {
+    background: #fdf6ec;
+    color: #e6a23c;
+  }
+}
+
+.task-reset {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #409eff;
+}
+
+.result-card {
+  padding: 36rpx 32rpx 28rpx;
+  margin-bottom: 24rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  border: 4rpx solid #dcdfe6;
+  text-align: center;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.04);
+
+  &.is-success {
+    border-color: #10b981;
+  }
+
+  &.is-danger {
+    border-color: #f56c6c;
+  }
+
+  &.is-warning {
+    border-color: #e6a23c;
+  }
+}
+
+.result-icon {
+  width: 96rpx;
+  height: 96rpx;
+  margin: 0 auto 16rpx;
+  border-radius: 50%;
+  line-height: 96rpx;
+  font-size: 48rpx;
+  font-weight: 700;
+
+  &.is-success {
+    background: #e8f8ef;
+    color: #10b981;
+  }
+
+  &.is-danger {
+    background: #fef0f0;
+    color: #f56c6c;
+  }
+
+  &.is-warning {
+    background: #fdf6ec;
+    color: #e6a23c;
+  }
+}
+
+.result-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #303133;
+}
+
+.result-desc {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #606266;
+
+  &.is-error {
+    color: #f56c6c;
+    word-break: break-all;
+  }
+}
+
+.share-box {
+  display: flex;
+  align-items: center;
+  margin: 24rpx 0;
+  padding: 16rpx 20rpx;
+  border: 2rpx dashed #c0c4cc;
+  border-radius: 16rpx;
+  background: #fafbfc;
+  text-align: left;
+}
+
+.share-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-label {
+  font-size: 20rpx;
+  color: #909399;
+}
+
+.share-url {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #303133;
+  word-break: break-all;
+
+  &.is-muted {
+    color: #909399;
+    font-weight: 400;
+  }
+
+  &.is-error {
+    color: #f56c6c;
+    font-weight: 400;
+  }
+}
+
+.share-copy {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  padding: 8rpx 24rpx;
+  border-radius: 8rpx;
+  background: #ecf5ff;
+  color: #409eff;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.result-btn {
+  height: 88rpx;
+  margin-top: 16rpx;
+  border-radius: 20rpx;
+  line-height: 88rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+
+  &.is-success {
+    background: linear-gradient(90deg, #10b981, #059669);
+    color: #fff;
+  }
+
+  &.is-primary {
+    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+    color: #fff;
+  }
+
+  &.is-danger {
+    background: linear-gradient(90deg, #f56c6c, #e04b4b);
+    color: #fff;
+  }
+
+  &.is-plain {
+    background: #fff;
+    border: 2rpx solid #dcdfe6;
+    color: #606266;
   }
 }
 </style>
