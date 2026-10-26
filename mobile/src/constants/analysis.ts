@@ -113,3 +113,18 @@ export const HIDDEN_DEFAULTS = {
 
 /** 当前进行中任务的 sessionStorage 键（P3.4 恢复进度使用） */
 export const CURRENT_TASK_KEY = "ha-current-task";
+
+/** 当前任务展示用快照（股票、日期、深度、提交载荷等）的 sessionStorage 键 */
+export const CURRENT_TASK_META_KEY = "ha-current-task-meta";
+
+/** 进度轮询间隔（毫秒，tech_solution 4.1.4：每 3 秒） */
+export const POLL_INTERVAL_MS = 3000;
+
+/** 首次查询返回 404 时的重试等待（毫秒，tech_solution 7.5） */
+export const POLL_NOT_FOUND_RETRY_MS = 2000;
+
+/** 轮询总时长上限（毫秒，30 分钟） */
+export const POLL_MAX_DURATION_MS = 30 * 60 * 1000;
+
+/** 连续网络失败达到该次数后进入 timeout 状态 */
+export const POLL_MAX_CONSECUTIVE_FAILURES = 5;
