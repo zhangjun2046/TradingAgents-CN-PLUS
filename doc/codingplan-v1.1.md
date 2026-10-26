@@ -40,7 +40,7 @@
 | P2.2 PC 菜单权限 + 路由守卫 + 用户手机号 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#13](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/13) | 管理菜单按角色隐藏；分析页改用公开模型接口 |
 | P3.2 H5 账号页面 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#14](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/14) | 替换最简登录页；H5 注册/忘记密码/我的/协议页 |
 | P5.3 真实短信通道接入（腾讯云） | A | `line/auth` | 待启动 | — | — | 签名 / 模板 ID 预留，审核通过后填入 |
-| P5.4 协议正文替换 + 上线检查清单 | A | `line/auth` | 待启动 | — | — | 完成后生成交接文档 `Deploy-Runbook.md`；部署项在最终集成后由 B 确认 |
+| P5.4 协议正文替换 + 上线检查清单 | A | `line/auth` | 进行中 | 2026-10-26 | — | 蒙关牧商城稿已改写为 HunterAgent PC/H5；交接 `Deploy-Runbook.md`；mock 短信关闭阻塞于 P5.3 |
 
 #### B 线进度（单股分析 + 分析报告）
 
