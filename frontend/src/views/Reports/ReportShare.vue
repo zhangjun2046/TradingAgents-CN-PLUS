@@ -6,13 +6,15 @@
     </div>
 
     <div v-else-if="error" class="share-status share-status--error">
+      <a class="back-list" :href="reportListUrl" @click="onBackToList">返回报告列表</a>
       <h1>链接已失效</h1>
       <p>{{ error }}</p>
-      <p class="hint">请向分享者重新索取链接。</p>
+      <p class="hint">请向分享者重新索取链接，或返回报告列表重新打开。</p>
     </div>
 
     <article v-else-if="report" class="share-article">
       <header class="share-header">
+        <a class="back-list" :href="reportListUrl" @click="onBackToList">返回报告列表</a>
         <p class="eyebrow">TradingAgents-CN 分析报告</p>
         <h1>{{ report.stock_name || report.stock_symbol }} 分析报告</h1>
         <div class="meta">
@@ -91,6 +93,20 @@ type SharedReport = {
   summary?: string
   key_points?: string[]
   reports?: Record<string, unknown>
+}
+
+/** 开发期分享页在 :3000，报告列表在 H5 :3100；同域部署时走当前站点 /m/。 */
+const reportListUrl = computed(() => {
+  if (typeof window === 'undefined') return '/m/#/pages/reports/list'
+  const { hostname, port, origin } = window.location
+  const isDevPc =
+    (hostname === 'localhost' || hostname === '127.0.0.1') && port === '3000'
+  const base = isDevPc ? 'http://localhost:3100' : origin
+  return `${base}/m/#/pages/reports/list`
+})
+
+function onBackToList(): void {
+  console.info('[Share] back to report list', { url: reportListUrl.value })
 }
 
 const MODULE_TITLES: Record<string, string> = {
@@ -230,6 +246,19 @@ onMounted(() => {
   max-width: 720px;
   margin: 0 auto;
   padding: 20px 16px 48px;
+}
+
+.back-list {
+  display: inline-flex;
+  margin-bottom: 12px;
+  color: #409eff;
+  font-size: 14px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.share-status .back-list {
+  margin-bottom: 20px;
 }
 
 .share-header {
