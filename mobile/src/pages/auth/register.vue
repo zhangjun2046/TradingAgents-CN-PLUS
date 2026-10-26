@@ -14,8 +14,8 @@
           @need-refresh="captchaRef?.refresh?.()"
         />
       </view>
-      <input class="login-input" v-model="password" password placeholder="密码 6～64 位" />
-      <input class="login-input" v-model="confirm" password placeholder="确认密码" />
+      <PasswordInput v-model="password" placeholder="密码 6～64 位" />
+      <PasswordInput v-model="confirm" placeholder="确认密码" />
       <label class="agree">
         <checkbox :checked="agreed" @click="agreed = !agreed" />
         <text>我已阅读并同意</text>
@@ -41,6 +41,7 @@ import { useAuthStore } from "@/stores/auth";
 import { goAfterLogin } from "@/utils/guard";
 import CaptchaImage from "@/components/CaptchaImage.vue";
 import SmsCodeButton from "@/components/SmsCodeButton.vue";
+import PasswordInput from "@/components/PasswordInput.vue";
 
 const auth = useAuthStore();
 const phone = ref("");

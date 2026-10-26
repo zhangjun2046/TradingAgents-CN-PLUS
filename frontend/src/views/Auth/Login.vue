@@ -27,12 +27,17 @@
               <el-form-item label="密码" prop="password">
                 <el-input
                   v-model="loginForm.password"
-                  type="password"
+                  :type="showPassword ? 'text' : 'password'"
                   placeholder="请输入密码"
                   prefix-icon="Lock"
-                  show-password
                   @keyup.enter="handlePasswordLogin"
-                />
+                >
+                  <template #suffix>
+                    <span class="pwd-toggle" @click.stop="showPassword = !showPassword">
+                      {{ showPassword ? '隐藏' : '显示' }}
+                    </span>
+                  </template>
+                </el-input>
               </el-form-item>
               <el-form-item>
                 <el-button
@@ -122,6 +127,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const loginTab = ref('password')
+const showPassword = ref(false)
 const loginFormRef = ref()
 const smsFormRef = ref()
 const captchaRef = ref()
@@ -251,6 +257,13 @@ const handleSmsLogin = async () => {
   display: flex;
   gap: 8px;
   width: 100%;
+}
+
+.pwd-toggle {
+  cursor: pointer;
+  color: var(--el-color-primary);
+  font-size: 13px;
+  user-select: none;
 }
 
 .auth-links {

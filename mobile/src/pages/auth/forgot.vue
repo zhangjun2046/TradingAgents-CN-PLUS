@@ -14,8 +14,8 @@
           @need-refresh="captchaRef?.refresh?.()"
         />
       </view>
-      <input class="login-input" v-model="password" password placeholder="新密码 6～64 位" />
-      <input class="login-input" v-model="confirm" password placeholder="确认新密码" />
+      <PasswordInput v-model="password" placeholder="新密码 6～64 位" />
+      <PasswordInput v-model="confirm" placeholder="确认新密码" />
       <button class="ha-btn-primary login-btn" :loading="loading" @click="onSubmit">重置密码</button>
     </view>
     <view class="auth-links">
@@ -29,6 +29,7 @@ import { ref } from "vue";
 import { resetPasswordBySms } from "@/api/auth";
 import CaptchaImage from "@/components/CaptchaImage.vue";
 import SmsCodeButton from "@/components/SmsCodeButton.vue";
+import PasswordInput from "@/components/PasswordInput.vue";
 
 const phone = ref("");
 const captchaId = ref("");

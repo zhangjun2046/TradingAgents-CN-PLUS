@@ -2,9 +2,9 @@
   <view class="ha-page login-page">
     <view class="login-title">修改密码</view>
     <view class="login-form">
-      <input class="login-input" v-model="oldPassword" password placeholder="当前密码" />
-      <input class="login-input" v-model="newPassword" password placeholder="新密码 6～64 位" />
-      <input class="login-input" v-model="confirm" password placeholder="确认新密码" />
+      <PasswordInput v-model="oldPassword" placeholder="当前密码" />
+      <PasswordInput v-model="newPassword" placeholder="新密码 6～64 位" />
+      <PasswordInput v-model="confirm" placeholder="确认新密码" />
       <button class="ha-btn-primary login-btn" :loading="loading" @click="onSubmit">保存</button>
     </view>
   </view>
@@ -15,6 +15,7 @@ import { ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import { changePassword } from "@/api/auth";
 import { ensureLogin } from "@/utils/guard";
+import PasswordInput from "@/components/PasswordInput.vue";
 
 const oldPassword = ref("");
 const newPassword = ref("");
