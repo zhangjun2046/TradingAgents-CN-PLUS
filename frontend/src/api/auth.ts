@@ -12,6 +12,7 @@ import type {
 } from '@/types/auth'
 
 const skipAuth = { skipAuth: true, skipAuthError: true, skipErrorHandler: true }
+const skipToast = { skipErrorHandler: true }
 
 export function extractAuthError(error: any): string {
   const detail = error?.response?.data?.detail
@@ -56,15 +57,15 @@ export const authApi = {
   getUserInfo: () => ApiClient.get<User>('/api/auth/me'),
 
   updateUserInfo: (data: Partial<User>) =>
-    ApiClient.put<User>('/api/auth/me', data),
+    ApiClient.put<User>('/api/auth/me', data, skipToast),
 
   changePassword: (data: ChangePasswordForm) =>
-    ApiClient.post('/api/auth/change-password', data),
+    ApiClient.post('/api/auth/change-password', data, skipToast),
 
   /** 管理员重置他人密码（与忘记密码接口不同） */
   resetPassword: (username: string, new_password: string) =>
-    ApiClient.post('/api/auth/reset-password', { username, new_password }),
+    ApiClient.post('/api/auth/reset-password', { username, new_password }, skipToast),
 
   listUsers: () =>
-    ApiClient.get<{ users: User[]; total: number }>('/api/auth/users')
+    ApiClient.get<{ users: User[]; total: number }>('/api/auth/users', undefined, skipToast)
 }

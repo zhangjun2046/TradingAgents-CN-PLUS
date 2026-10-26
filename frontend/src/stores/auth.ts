@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { useStorage } from '@vueuse/core'
-import { authApi } from '@/api/auth'
+import { authApi, extractAuthError } from '@/api/auth'
 import type { User, LoginForm, PhoneRegisterForm } from '@/types/auth'
 
 export interface AuthState {
@@ -394,7 +394,7 @@ export const useAuthStore = defineStore('auth', {
         }
       } catch (error: any) {
         console.error('更新用户信息失败:', error)
-        ElMessage.error(error.message || '更新失败，请重试')
+        ElMessage.error(extractAuthError(error) || '更新失败，请重试')
         return false
       }
     },
@@ -454,7 +454,7 @@ export const useAuthStore = defineStore('auth', {
         }
       } catch (error: any) {
         console.error('修改密码失败:', error)
-        ElMessage.error(error.message || '修改密码失败，请重试')
+        ElMessage.error(extractAuthError(error) || '修改密码失败，请重试')
         return false
       }
     },
