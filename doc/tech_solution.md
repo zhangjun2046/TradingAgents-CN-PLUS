@@ -518,7 +518,7 @@ export interface DeptDef { key: string; name: string; roles: RoleDef[] }
 export const DEPARTMENTS: DeptDef[] = [
   { key: 'overview', name: '概览', roles: [] },
   {
-    key: 'analysts', name: '分析师团队', roles: [
+    key: 'analysts', name: '分析部', roles: [
       { key: 'market', name: '市场分析师', fields: ['market_report'] },
       { key: 'fundamentals', name: '基本面分析师', fields: ['fundamentals_report'] },
       { key: 'news', name: '新闻分析师', fields: ['news_report'] },
@@ -538,15 +538,14 @@ export const DEPARTMENTS: DeptDef[] = [
       { key: 'risky', name: '激进风控分析师', fields: ['risky_analyst'] },
       { key: 'safe', name: '保守风控分析师', fields: ['safe_analyst'] },
       { key: 'neutral', name: '中性风控分析师', fields: ['neutral_analyst'] },
-      { key: 'riskManager', name: '风险经理', fields: ['risk_management_decision'] },
+      { key: 'riskManager', name: '风险管理委员会主席', fields: ['risk_management_decision', 'final_trade_decision'] },
     ],
   },
-  { key: 'decision', name: '投资决策', roles: [{ key: 'final', name: '投资决策', fields: ['final_trade_decision'] }] },
 ]
 ```
 
 - `fields` 多个时取第一个非空字段；
-- 显示规则在 `useShareReport.ts` 中派生：岗位内容为空则剔除；部门无岗位则剔除（概览除外）；部门只剩 1 个岗位时 `showSubTabs = false`；
+- 显示规则在 `useShareReport.ts` 中派生：岗位内容为空则剔除；部门无岗位则剔除（概览除外）；部门至少两个岗位时才显示二级页签；
 - `reports` 中出现映射表外的字段时，追加到「其他」部门，避免内容丢失。
 
 ### 5.3 结论提取规则（`utils/reportConclusion.ts`）
@@ -1017,7 +1016,7 @@ async def ensure_task_access(task_id: str, user: dict) -> None:
 | 范围 | 方式 |
 |------|------|
 | `reportConclusion.ts` | Vitest 单测：看多 / 看空 / 中性 / 未识别、结论小节优先、60 字截断 |
-| `useShareReport.ts` | 单测：空岗位剔除、空部门剔除、单岗位不显示二级页签、未知字段归入「其他」 |
+| `useShareReport.ts` | 单测：空岗位剔除、空部门剔除、单个岗位不显示二级页签、未知字段归入「其他」 |
 | H5 校验工具 | 单测：手机号、各市场股票代码、密码规则 |
 | E2E | Playwright（移动端视口 iPhone 13 / Pixel 7）：注册（含图形码 + 短信码 + 密码）→ 提交分析（mock 小模型）→ 进度 → 分享页 → 切换页签 → 导出 |
 | 真机 | 微信内置浏览器（iOS / Android）、iOS Safari、Android Chrome 各走一遍主流程 |

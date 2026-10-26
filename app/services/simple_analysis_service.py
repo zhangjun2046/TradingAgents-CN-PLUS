@@ -369,6 +369,55 @@ def _get_default_provider_by_model(model_name: str) -> str:
     return provider
 
 
+_SUMMARY_MAX_LENGTH = 100
+_SENTENCE_ENDINGS = ("。", "！", "？")
+
+
+def _is_summary_skippable_line(line: str) -> bool:
+    """标题、分隔线、表格行不进入执行摘要。"""
+    text = line.strip()
+    if not text:
+        return True
+    if text.startswith("#"):
+        return True
+    if len(text) >= 3 and set(text) <= {"-", "*", "_"}:
+        return True
+    if text.startswith("|"):
+        return True
+    return False
+
+
+def format_overview_summary(content: str) -> str:
+    """跳过标题和表格，取第一句完整中文。超长且上限内没有句号时返回空字符串。"""
+    if not isinstance(content, str) or not content.strip():
+        return ""
+    prose = "".join(
+        line.replace("*", "").replace("`", "").replace("_", "").replace(">", "").replace("#", "").strip()
+        for line in content.splitlines()
+        if not _is_summary_skippable_line(line)
+    ).strip()
+    if prose.endswith("...") or prose.endswith("…"):
+        prose = prose[:-3].rstrip() if prose.endswith("...") else prose[:-1].rstrip()
+    if not prose:
+        return ""
+    first_end = -1
+    for index, char in enumerate(prose):
+        if char in _SENTENCE_ENDINGS:
+            first_end = index
+            break
+    if first_end == -1:
+        return ""
+    if first_end < _SUMMARY_MAX_LENGTH:
+        return prose[: first_end + 1].strip()
+    last_end = -1
+    for index, char in enumerate(prose[:_SUMMARY_MAX_LENGTH]):
+        if char in _SENTENCE_ENDINGS:
+            last_end = index
+    if last_end == -1:
+        return ""
+    return prose[: last_end + 1].strip()
+
+
 def create_analysis_config(
     research_depth,  # 支持数字(1-5)或字符串("快速", "标准", "深度")
     selected_analysts: list,
@@ -1835,23 +1884,18 @@ class SimpleAnalysisService:
             summary = ""
             recommendation = ""
 
-            # 1. 优先从reports中的final_trade_decision提取summary（与web目录保持一致）
+            # 1. 优先从 reports 的 final_trade_decision 取第一句，不在表格中间截断
             if isinstance(reports, dict) and 'final_trade_decision' in reports:
                 final_decision_content = reports['final_trade_decision']
                 if isinstance(final_decision_content, str) and len(final_decision_content) > 50:
-                    # 提取前200个字符作为摘要（与web目录完全一致）
-                    summary = final_decision_content[:200].replace('#', '').replace('*', '').strip()
-                    if len(final_decision_content) > 200:
-                        summary += "..."
+                    summary = format_overview_summary(final_decision_content)
                     logger.info(f"📝 [SUMMARY] 从final_trade_decision提取摘要: {len(summary)}字符")
 
             # 2. 如果没有final_trade_decision，从state中提取
             if not summary and isinstance(state, dict):
                 final_decision = state.get('final_trade_decision', '')
                 if isinstance(final_decision, str) and len(final_decision) > 50:
-                    summary = final_decision[:200].replace('#', '').replace('*', '').strip()
-                    if len(final_decision) > 200:
-                        summary += "..."
+                    summary = format_overview_summary(final_decision)
                     logger.info(f"📝 [SUMMARY] 从state.final_trade_decision提取摘要: {len(summary)}字符")
 
             # 3. 生成recommendation（从decision的reasoning）
@@ -1873,9 +1917,9 @@ class SimpleAnalysisService:
                 # 尝试从其他报告中提取摘要
                 for report_name, content in reports.items():
                     if isinstance(content, str) and len(content) > 100:
-                        summary = content[:200].replace('#', '').replace('*', '').strip()
-                        if len(content) > 200:
-                            summary += "..."
+                        summary = format_overview_summary(content)
+                        if not summary:
+                            continue
                         logger.info(f"📝 [SUMMARY] 从{report_name}提取摘要: {len(summary)}字符")
                         break
 

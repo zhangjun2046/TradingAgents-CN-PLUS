@@ -231,7 +231,7 @@ flowchart LR
 | 一级页签（部门） | 二级页签（岗位） | `reports` 字段 |
 |------------------|------------------|----------------|
 | 概览 | —（无二级） | 决策条、`summary`、`key_points`，以及「决策链」 |
-| 分析师团队 | 市场分析师 | `market_report` |
+| 分析部 | 市场分析师 | `market_report` |
 | | 基本面分析师 | `fundamentals_report` |
 | | 新闻分析师 | `news_report` |
 | | 社媒 / 情绪分析师 | `sentiment_report` |
@@ -242,23 +242,21 @@ flowchart LR
 | 风控部 | 激进风控分析师 | `risky_analyst` |
 | | 保守风控分析师 | `safe_analyst` |
 | | 中性风控分析师 | `neutral_analyst` |
-| | 风险经理 | `risk_management_decision` |
-| 投资决策 | —（无二级） | `final_trade_decision` |
+| | 风险经理 | `risk_management_decision`；缺失时用 `final_trade_decision` |
 
 ```mermaid
 flowchart LR
-  overview[概览与决策链] --> analystTeam[分析师团队]
-  analystTeam --> research[研究部]
+  overview[概览与决策链] --> analysisDept[分析部]
+  analysisDept --> research[研究部]
   research --> trading[交易部]
   trading --> risk[风控部]
-  risk --> decision[投资决策]
 ```
 
 **显示规则：**
 
 - 无内容的岗位不显示；
 - 部门下所有岗位均无内容时，该一级页签不显示；
-- 部门下仅有一个岗位有内容时，不显示二级页签。
+- 部门下至少有两个岗位时才显示二级页签；只有一个岗位时不显示。
 
 **岗位页结构：**
 
