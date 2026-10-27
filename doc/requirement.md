@@ -239,9 +239,9 @@ flowchart LR
 | | 空头研究员 | `bear_researcher` |
 | | 研究经理 | `research_team_decision` / `investment_plan` |
 | 交易部 | 交易员 | `trader_investment_plan` |
-| 风控部 | 激进风控分析师 | `risky_analyst` |
-| | 保守风控分析师 | `safe_analyst` |
-| | 中性风控分析师 | `neutral_analyst` |
+| 风控部 | 激进分析师 | `risky_analyst` |
+| | 保守分析师 | `safe_analyst` |
+| | 中性分析师 | `neutral_analyst` |
 | | 风险经理 | `risk_management_decision`；缺失时用 `final_trade_decision` |
 
 ```mermaid

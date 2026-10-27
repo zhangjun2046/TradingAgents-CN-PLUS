@@ -10,6 +10,11 @@ export interface RoleDef {
   name: string
   /** 多个字段时取第一个非空字段（如研究经理合并 research_team_decision / investment_plan） */
   fields: string[]
+  /**
+   * 结论卡是否显示观点徽章。
+   * 辩论席和交易员的名称已是角色，不显示；缺省为显示。
+   */
+  showsStance?: boolean
 }
 
 export interface DeptDef {
@@ -43,8 +48,8 @@ export const DEPARTMENTS: DeptDef[] = [
     key: 'research',
     name: '研究部',
     roles: [
-      { key: 'bull', name: '多头研究员', fields: ['bull_researcher'] },
-      { key: 'bear', name: '空头研究员', fields: ['bear_researcher'] },
+      { key: 'bull', name: '多头研究员', fields: ['bull_researcher'], showsStance: false },
+      { key: 'bear', name: '空头研究员', fields: ['bear_researcher'], showsStance: false },
       {
         key: 'manager',
         name: '研究经理',
@@ -55,15 +60,15 @@ export const DEPARTMENTS: DeptDef[] = [
   {
     key: 'trading',
     name: '交易部',
-    roles: [{ key: 'trader', name: '交易员', fields: ['trader_investment_plan'] }],
+    roles: [{ key: 'trader', name: '交易员', fields: ['trader_investment_plan'], showsStance: false }],
   },
   {
     key: 'risk',
     name: '风控部',
     roles: [
-      { key: 'risky', name: '激进风控分析师', fields: ['risky_analyst'] },
-      { key: 'safe', name: '保守风控分析师', fields: ['safe_analyst'] },
-      { key: 'neutral', name: '中性风控分析师', fields: ['neutral_analyst'] },
+      { key: 'risky', name: '激进分析师', fields: ['risky_analyst'], showsStance: false },
+      { key: 'safe', name: '保守分析师', fields: ['safe_analyst'], showsStance: false },
+      { key: 'neutral', name: '中性分析师', fields: ['neutral_analyst'], showsStance: false },
       {
         key: 'riskManager',
         name: '风险管理委员会主席',
@@ -108,6 +113,8 @@ export interface VisibleRole {
   /** 命中的模块字段（多个字段时取第一个非空的） */
   field: string
   content: unknown
+  /** 结论卡是否显示观点徽章；辩论席与交易员为 false */
+  showsStance: boolean
 }
 
 export interface VisibleDept {
@@ -161,7 +168,13 @@ export function buildVisibleDepartments(
     for (const role of dept.roles) {
       const hit = pickRoleContent(source, role)
       if (!hit) continue
-      roles.push({ key: role.key, name: role.name, field: hit.field, content: hit.content })
+      roles.push({
+        key: role.key,
+        name: role.name,
+        field: hit.field,
+        content: hit.content,
+        showsStance: role.showsStance !== false,
+      })
     }
     if (roles.length === 0) continue
     result.push({ key: dept.key, name: dept.name, roles, showSubTabs: roles.length > 1 })
@@ -176,6 +189,7 @@ export function buildVisibleDepartments(
       name: moduleTitle(field),
       field,
       content,
+      showsStance: true,
     })
   }
   if (extraRoles.length > 0) {

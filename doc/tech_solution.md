@@ -535,9 +535,9 @@ export const DEPARTMENTS: DeptDef[] = [
   { key: 'trading', name: '交易部', roles: [{ key: 'trader', name: '交易员', fields: ['trader_investment_plan'] }] },
   {
     key: 'risk', name: '风控部', roles: [
-      { key: 'risky', name: '激进风控分析师', fields: ['risky_analyst'] },
-      { key: 'safe', name: '保守风控分析师', fields: ['safe_analyst'] },
-      { key: 'neutral', name: '中性风控分析师', fields: ['neutral_analyst'] },
+      { key: 'risky', name: '激进分析师', fields: ['risky_analyst'] },
+      { key: 'safe', name: '保守分析师', fields: ['safe_analyst'] },
+      { key: 'neutral', name: '中性分析师', fields: ['neutral_analyst'] },
       { key: 'riskManager', name: '风险管理委员会主席', fields: ['risk_management_decision', 'final_trade_decision'] },
     ],
   },
