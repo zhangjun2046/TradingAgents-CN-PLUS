@@ -54,6 +54,16 @@ describe('DEPARTMENTS 映射表', () => {
     ])
   })
 
+  it('风控部辩论席使用与 PC 一致的短名称', () => {
+    const risk = DEPARTMENTS.find((dept) => dept.key === 'risk')
+    expect(risk?.roles.map((role) => role.name)).toEqual([
+      '激进分析师',
+      '保守分析师',
+      '中性分析师',
+      '风险管理委员会主席',
+    ])
+  })
+
   it('风控部主席合并两段相同正文，优先 risk_management_decision', () => {
     const risk = DEPARTMENTS.find((dept) => dept.key === 'risk')
     const chair = risk?.roles[risk.roles.length - 1]
@@ -187,7 +197,7 @@ describe('buildVisibleDepartments', () => {
     const other = result.find((dept) => dept.key === OTHER_DEPT_KEY)
     expect(other?.name).toBe('其他')
     expect(other?.roles).toEqual([
-      { key: 'custom_module', name: 'custom module', field: 'custom_module', content: '自定义正文' },
+      { key: 'custom_module', name: 'custom module', field: 'custom_module', content: '自定义正文', showsStance: true },
     ])
     expect(other?.showSubTabs).toBe(false)
   })
@@ -216,6 +226,7 @@ describe('buildVisibleDepartments', () => {
       name: '风险管理委员会主席',
       field: 'risk_management_decision',
       content: '主席裁决',
+      showsStance: true,
     })
     expect(result.find((dept) => dept.key === OTHER_DEPT_KEY)).toBeUndefined()
   })
@@ -231,6 +242,34 @@ describe('buildVisibleDepartments', () => {
   it('概览始终排在第一位且不参与岗位内容判空', () => {
     const result = buildVisibleDepartments({ bull_researcher: 'b' })
     expect(result[0].key).toBe(OVERVIEW_DEPT_KEY)
+  })
+
+  it('辩论席和交易员不显示观点徽章，分析师、研究经理和主席仍显示', () => {
+    const result = buildVisibleDepartments({
+      market_report: '市场',
+      bull_researcher: '多头',
+      bear_researcher: '空头',
+      research_team_decision: '研究经理',
+      trader_investment_plan: '交易',
+      risky_analyst: '激进',
+      safe_analyst: '保守',
+      neutral_analyst: '中性',
+      risk_management_decision: '主席',
+      company_overview: '概况',
+    })
+    const byKey = Object.fromEntries(
+      result.flatMap((dept) => dept.roles.map((role) => [role.key, role.showsStance]))
+    )
+    expect(byKey.bull).toBe(false)
+    expect(byKey.bear).toBe(false)
+    expect(byKey.trader).toBe(false)
+    expect(byKey.risky).toBe(false)
+    expect(byKey.safe).toBe(false)
+    expect(byKey.neutral).toBe(false)
+    expect(byKey.market).toBe(true)
+    expect(byKey.manager).toBe(true)
+    expect(byKey.riskManager).toBe(true)
+    expect(byKey.company_overview).toBe(true)
   })
 })
 
