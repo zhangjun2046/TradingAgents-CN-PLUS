@@ -41,7 +41,7 @@ const TRAILING_BLOCK: Record<string, string> = {
 
 /** 明确裁决语句优先取引导词后的第一个有效动作，不被后面的适用人群或否定项覆盖。 */
 const EXPLICIT_DECISION_LEAD =
-  /最终裁决|最终决策|最终建议|核心建议|投资评级|操作建议|我的决定|明确(?:的)?(?:决策|立场|建议)|评级(?:为)?|建议/
+  /最终裁决|最终决策|最终建议|最终交易建议|最终交易提案|最终重申|核心建议|投资评级|操作建议|我的建议是|我的裁决|我的决策|我的决定|明确(?:的)?(?:决策|立场|建议)|评级(?:为)?|建议/
 
 /** 「买入，而非观望」中转折后的动作是被排除项，不参与当前观点判定。 */
 const REJECTED_ALTERNATIVE = /而非|而不是/
@@ -129,7 +129,11 @@ export function plainTextLength(markdown: string): number {
 
 export function extractRoleView(markdown: string): RoleExtract {
   const source = markdown || ''
-  const conclusion = extractConclusion(proseOnly(source))
+  let conclusion = extractConclusion(proseOnly(source))
+  if (conclusion.stance === 'unknown') {
+    const fromTable = ratingFromSummaryTable(source)
+    if (fromTable) conclusion = fromTable
+  }
   const table = pickTable(source)
   return {
     conclusion,
@@ -139,19 +143,24 @@ export function extractRoleView(markdown: string): RoleExtract {
 }
 
 function extractConclusion(prose: string): Conclusion {
-  const verdict = verdictFromEnd(prose)
-  if (verdict.stance !== 'unknown') return verdict
-
-  // 研究经理口语体：「我的决定…给出卖出建议」优先于后文提到的「买入机会」等论据词
-  const decision = decisionFromProse(prose)
-  if (decision.stance !== 'unknown') return decision
+  // 最后一句点名结论（投资评级 / 我的建议是 / 最终裁决）就是正文结论
+  const strong = scanLeadSentences(prose, STRONG_LEAD)
+  if (strong.stance !== 'unknown') return strong
 
   const sections = findConclusionSections(prose)
-  const scopes = sections.length > 0 ? [...sections].reverse() : [firstProseParagraph(prose)]
-  for (const scope of scopes) {
-    const conclusion = conclusionFromScope(scope, prose)
-    if (conclusion.stance !== 'unknown') return conclusion
+  if (sections.length > 0) {
+    for (const scope of [...sections].reverse()) {
+      const decision = scanLeadSentences(scope, DECISION_LEAD)
+      if (decision.stance !== 'unknown') return decision
+      const conclusion = conclusionFromScope(scope, prose)
+      if (conclusion.stance !== 'unknown') return conclusion
+    }
   }
+
+  // 没有结论标题时，再认「给出…建议 / 建议：」；仍没有就只用开头段，避免后文论据改口
+  const decision = scanLeadSentences(prose, DECISION_LEAD)
+  if (decision.stance !== 'unknown') return decision
+  if (sections.length === 0) return conclusionFromScope(firstProseParagraph(prose), prose)
   return UNKNOWN
 }
 
@@ -169,38 +178,34 @@ function conclusionFromScope(scope: string, prose: string): Conclusion {
   return { stance: found.stance, sentence: cleaned }
 }
 
-/** 文末裁决句。没有「结论 / 建议」标题时，主席常把评级写在这里。 */
-const VERDICT_LEAD = /最终裁决|最终决策|最终建议/
+/**
+ * 正文里点名的结论句。从后往前取最后一句，避免文首标题盖过后文的「我的建议是 / 我的裁决」。
+ * 不包含光秃的「建议：」，以免文末风险提示盖过正式评级。
+ */
+const STRONG_LEAD =
+  /最终裁决|最终决策|最终建议|最终交易建议|最终交易提案|最终重申|我的建议是|我的裁决|我的决策|我的决定|投资评级|核心建议|操作建议/
 
 /** 本人决策句：避免后文「买入机会」等论据词盖过真正的卖出/买入结论。 */
 const DECISION_LEAD =
-  /我的决定|给出[\s\S]{0,20}建议|最终建议|明确(?:的)?(?:决策|立场|建议)|建议[：:]|评级为|评级[：:]/
+  /我的决定|我的建议是|我的裁决|我的决策|最终交易建议|最终交易提案|最终重申|给出[\s\S]{0,20}建议|最终建议|明确(?:的)?(?:决策|立场|建议)|建议[：:]|评级为|评级[：:]|投资评级|核心建议|操作建议/
 
-/** 从后往前找带裁决字样、且含有效观点词的原句。 */
-function verdictFromEnd(prose: string): Conclusion {
+/** 汇总表里表示本岗评级的行名。普通数据表的「买入」不在此列。 */
+const RATING_ROW_LABEL = /^(投资评级|交易建议|投资建议|操作建议|建议操作|最终建议|最终交易提案|最终交易建议)$/
+
+/** 从后往前找带引导词、且能判定观点的原句。 */
+function scanLeadSentences(prose: string, lead: RegExp): Conclusion {
   const sentences = prose
     .split(/[。！？；\n]+/)
     .map(part => part.trim())
     .filter(part => part.length > 0)
   for (let index = sentences.length - 1; index >= 0; index -= 1) {
     const raw = sentences[index]
-    if (!VERDICT_LEAD.test(stripInline(raw))) continue
-    const conclusion = conclusionFromScope(raw, prose)
-    if (conclusion.stance !== 'unknown') return conclusion
-  }
-  return UNKNOWN
-}
-
-/** 从后往前找本人决策句（给出…建议 / 我的决定 等）。 */
-function decisionFromProse(prose: string): Conclusion {
-  const sentences = prose
-    .split(/[。！？；\n]+/)
-    .map(part => part.trim())
-    .filter(part => part.length > 0)
-  for (let index = sentences.length - 1; index >= 0; index -= 1) {
-    const raw = sentences[index]
-    if (!DECISION_LEAD.test(stripInline(raw))) continue
-    const conclusion = conclusionFromScope(raw, prose)
+    if (!lead.test(stripInline(raw))) continue
+    let conclusion = conclusionFromScope(raw, prose)
+    // 「我的决策是：……。持有。」评级词有时落在下一句，仍属同一结论。
+    if (conclusion.stance === 'unknown' && index + 1 < sentences.length) {
+      conclusion = conclusionFromScope(`${raw}。${sentences[index + 1]}`, prose)
+    }
     if (conclusion.stance !== 'unknown') return conclusion
   }
   return UNKNOWN
@@ -307,6 +312,8 @@ function explicitStanceOf(sentence: string): Exclude<Stance, 'unknown'> | null {
   const lead = sentence.match(EXPLICIT_DECISION_LEAD)
   if (lead?.index !== undefined) {
     const start = lead.index + lead[0].length
+    const phrase = ratingPhraseStance(sentence.slice(start))
+    if (phrase) return phrase
     const found = firstValidStance(sentence, start, Math.min(sentence.length, start + 48))
     if (found) return found
   }
@@ -351,14 +358,23 @@ function stanceForWord(word: string): Exclude<Stance, 'unknown'> | null {
   return STANCE_WORDS.find(rule => rule.words.includes(word))?.stance || null
 }
 
+/** 「投资评级：中性偏多 / 中性」紧跟在评级引导词后，中性是主评级。 */
+function ratingPhraseStance(text: string): Exclude<Stance, 'unknown'> | null {
+  const matched = text.match(/^[\s:：*_"'“”「」]*?(中性偏多|中性偏空|中性|偏多|偏空)/)
+  if (!matched) return null
+  if (matched[1] === '偏多') return 'bullish'
+  if (matched[1] === '偏空') return 'bearish'
+  return 'neutral'
+}
+
 function isNegated(sentence: string, index: number, word: string): boolean {
   const before = sentence.slice(0, index).replace(/[\s,，、：:；;]+$/g, '')
   if (NEGATION_TAIL.test(before)) return true
   // 否定并列项：「暂不买入或卖出」「避免增持、买入」。
   if (/(?:暂?不|不要|避免|无须|无需)[^，。；]{0,16}(?:或|和|、)$/.test(before)) return true
-  // 「此刻买入，不是……」：否定在关键词后面，整句也不是正向建议
-  const after = sentence.slice(index + word.length, index + word.length + 16)
-  return /(?:不是|不建议|并非|不要)/.test(after)
+  // 「此刻买入，不是……」：否定要紧挨关键词。后文另起的「不建议新建仓」不能反过来否定前面的持有。
+  const after = sentence.slice(index + word.length, index + word.length + 12)
+  return /^(?:[\s,，、：:；;（(]*)(?:不是|不建议|并非|不要)/.test(after)
 }
 
 /** 引号里的观点是在转述别人，不当作本岗结论。 */
@@ -428,6 +444,30 @@ function stripInline(line: string): string {
   // 句号切开后，成对标记可能只剩开头的 **，去掉残留才能和全文对上
   text = text.replace(/\*\*|__|[*_`]/g, '')
   return text.trim()
+}
+
+/**
+ * 正文没有写成句子、只在汇总表里给出评级时，用行名「交易建议 / 投资评级」对应的单元格。
+ * 不读普通数据表，避免「建议 | 买入」这种列被当成观点。
+ */
+function ratingFromSummaryTable(markdown: string): Conclusion | null {
+  const lines = stripFences(markdown).split(/\r?\n/)
+  const tables = collectTables(lines)
+  const readable = plainText(markdown)
+  for (let tableIndex = tables.length - 1; tableIndex >= 0; tableIndex -= 1) {
+    const table = tables[tableIndex]
+    if (!table.valid) continue
+    for (let rowIndex = table.rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+      const row = table.rows[rowIndex]
+      const label = (row[0] || '').trim()
+      const value = (row[1] || '').trim()
+      if (!RATING_ROW_LABEL.test(label) || !value) continue
+      const stance = stanceOf(value) || ratingPhraseStance(value)
+      if (!stance || !readable.includes(value)) continue
+      return { stance, sentence: value }
+    }
+  }
+  return null
 }
 
 function pickTable(markdown: string): ExtractedTable | null {
