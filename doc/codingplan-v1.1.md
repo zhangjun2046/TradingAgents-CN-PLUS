@@ -53,6 +53,7 @@
 | P3.3 H5 单股分析表单 | B | `line/report` | 已合入本线 | 2026-10-25 | [#17](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/17) | 表单对照原型图；公开模型接口兜底内置列表；市场文案对齐 PC；模型 Composer |
 | P3.4 H5 分析进度 + 跳转报告 | B | `line/report` | 已合入本线 | 2026-10-26 | [#25](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/25) | 3s 轮询 + 切后台暂停 + 刷新恢复；完成后分享链接跳转 `/s/{token}`；失败可重新分析；模型 Composer |
 | P3.5 H5 我的报告列表 | B | `line/report` | 已合入本线 | 2026-10-26 | [#27](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/27) | 我的报告列表（分页 / 下拉刷新 / 上拉加载 / 搜索 / 市场筛选 / 空态）+ 点击复用或重建分享并跳转 `/s/{token}`；分享页加「返回报告列表」；交接文档 `H5-Architecture.md`；视觉对齐 PC；模型 DeepSeek V4.1 Flash |
+| P3.5 报告列表视觉 | B | `line/report` | 待合入 | 2026-10-28 | 验收通过，待网页创建 PR | 搜索图标、市场色点、状态色条、首字标、日期芯片；「查看报告」改为右侧蓝底白字胶囊按钮；卡片保持白底，未铺市场底色；模型 Grok 4.7 |
 | P4.1 分享页组件拆分 + 部门 / 岗位两级页签 | B | `line/report` | 待验收 | 2026-10-26 | — | 概览 / 分析部 / 研究部 / 交易部 / 风控部；空岗位与空部门不显示，单岗位不显示二级页签；单测 39 通过；模型 Grok 4.7 |
 | P4.2 岗位结论卡 + 长文折叠 | B | `line/report` | 已合入本线 | 2026-10-27 | [#33](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/33) | 岗位结论卡（看多/看空/中性/未识别 + 一句话结论）+ 长文折叠（60vh）；观点徽章显隐（辩论席/交易员隐藏）；一句结论完整保留观点原句不截断；单测 109 通过（含组件测试 16） |
 | P4.2 结论与正文一致性修复 | B | `line/report` | 已合入本线 | 2026-10-28 | [#37](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/37) | 结论卡与观点徽章对齐正文点名结论；前端单测 156 通过；模型 Grok 4.7 |
@@ -1488,6 +1489,7 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 | P3.3 | `feat/report/P3.3-h5-analysis-form` | "开始 P3.3：按 tech_solution 4.1.1 / 4.1.2，实现 H5 单股分析表单，模型选项调用 /api/config/public/models，接口 404 或失败时退回按 7.3 契约结构写的内置列表，对照原型图 h5-single-analysis-main-v3.png" |
 | P3.4 | `feat/report/P3.4-h5-progress` | "开始 P3.4：按 tech_solution 4.1.3 / 4.1.4，实现 H5 分析进度轮询与完成后跳转分享页" |
 | P3.5 | `feat/report/P3.5-h5-report-list` | "开始 P3.5：按 tech_solution 4.2，实现 H5 我的报告列表，并生成交接文档 H5-Architecture.md" |
+| P3.5 视觉 | `feat/report/P3.5-list-visual` | "从 origin/line/report 开分支，优化 H5 报告列表视觉：图标、状态色条、首字标、日期芯片，以及右侧「查看报告」胶囊按钮；卡片保持白底；PR 合入 line/report" |
 | P4.1 | `feat/report/P4.1-share-tabs` | "开始 P4.1：按 tech_solution 5.1 / 5.2 / 5.4，分享页组件拆分与部门 - 岗位两级页签" |
 | P4.2 | `feat/report/P4.2-conclusion-card` | "开始 P4.2：按 tech_solution 5.3，实现岗位结论提取、结论卡与长文折叠" |
 | P4.2 修复 | `feat/report/P4.2-conclusion-consistency` | "修复 P4.2：从 origin/line/report 开分支，让结论卡和观点徽章与正文点名结论一致，PR 合入 line/report" |
