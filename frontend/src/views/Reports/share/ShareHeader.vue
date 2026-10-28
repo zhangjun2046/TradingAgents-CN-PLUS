@@ -1,6 +1,9 @@
 <template>
   <header class="share-header">
-    <a class="back-list" :href="reportListUrl" @click="onBackToList">返回报告列表</a>
+    <div class="top-row">
+      <a class="back-list" :href="reportListUrl" @click="onBackToList">返回报告列表</a>
+      <slot name="actions" />
+    </div>
     <p class="eyebrow">HunterAgent 分析报告</p>
     <h1>{{ title }}</h1>
     <div class="meta">
@@ -87,9 +90,16 @@ function onBackToList(): void {
   }
 }
 
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .back-list {
   display: inline-flex;
-  margin-bottom: 12px;
   color: #3b82f6;
   font-size: 14px;
   line-height: 1.4;

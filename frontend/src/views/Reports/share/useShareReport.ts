@@ -102,7 +102,7 @@ export function useShareReport() {
     try {
       const token = String(route.params.token || '')
       const response = await fetch(`/api/reports/share/${encodeURIComponent(token)}`)
-      if (response.status === 404) {
+      if (response.status === 404 || response.status === 410) {
         error.value = INVALID_LINK_MESSAGE
         report.value = null
         return
