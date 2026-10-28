@@ -46,7 +46,7 @@
 | P3.5 H5 我的报告列表 | B | 待启动 | — | — | 完成后生成交接文档 `H5-Architecture.md` |
 | P4.1 分享页组件拆分 + 部门 / 岗位两级页签 | B | 待启动 | — | — | — |
 | P4.2 岗位结论卡 + 长文折叠 | B | 待启动 | — | — | — |
-| P4.3 分享页图表化（置信度 / 风险 / 决策链 / 多空对比） | B | 待启动 | — | — | — |
+| P4.3 分享页图表化（置信度 / 风险 / 决策链） | B | 待启动 | — | — | 概览不含多空对比卡；不从多头 / 空头正文补抽观点，辩论留在研究部岗位 |
 | P4.4 分享页导出 + 微信内引导 | B | 待启动 | — | — | 完成后生成交接文档 `SharePage-Components.md` |
 | P5.1 Nginx `/m/` + Docker 构建 | B | 待启动 | — | — | — |
 
@@ -1051,23 +1051,24 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 
 **分支**：`feat/report/P4.3-share-charts`
 
-**干什么**：概览页增加置信度仪表盘、风险等级色块、投资建议结论卡、决策链（各岗位观点串成一条，可点击跳转）、多空对比卡。
+**干什么**：概览页增加置信度仪表盘、风险等级色块、投资建议结论卡、决策链（各岗位观点串成一条，可点击跳转）。概览不放多空对比卡，也不从多头 / 空头正文补抽观点；辩论原文留在研究部对应岗位。
 
 **AI 干什么**
-- 新建 `OverviewPanel.vue`、`ConfidenceGauge.vue`、`RiskBadge.vue`、`DecisionChain.vue`、`BullBearCompare.vue`
+- 新建 `OverviewPanel.vue`、`ConfidenceGauge.vue`、`RiskBadge.vue`、`DecisionChain.vue`
+- 不新建多空对比卡，不修改 `reportConclusion.ts` 的抽取规则
 - 图表按需加载，不拖慢首屏
-- 对照原型图 `doc/images/h5-report-share-overview.png`、`h5-report-share-research-compare.png`
+- 对照原型图 `doc/images/h5-report-share-overview.png`（概览不含多空对比）。`h5-report-share-research-compare.png` 里的强度条和分点论据本期不做
 
 **待批准修改的已有文件**：无（仅新建；集成到 `ReportShare.vue` 的改动会在清单中说明）
 
-**人工干什么**：手机模式查看概览页，点击决策链标签确认跳转
+**人工干什么**：手机模式查看概览页，点击决策链标签确认跳转；确认概览没有多空对比卡
 
 **使用模型**：强模型
 
 **测试标准 — 通过后方可进入 P4.4**
 1. 概览页可见置信度图与风险等级
 2. 决策链按部门顺序显示，点击跳到对应岗位
-3. 研究部可见多空对比卡
+3. 概览不出现多空对比卡；多头、空头辩论在研究部岗位正文中阅读
 
 ---
 
@@ -1351,7 +1352,7 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 | P3.5 | `feat/report/P3.5-h5-report-list` | "开始 P3.5：按 tech_solution 4.2，实现 H5 我的报告列表，并生成交接文档 H5-Architecture.md" |
 | P4.1 | `feat/report/P4.1-share-tabs` | "开始 P4.1：按 tech_solution 5.1 / 5.2 / 5.4，分享页组件拆分与部门 - 岗位两级页签" |
 | P4.2 | `feat/report/P4.2-conclusion-card` | "开始 P4.2：按 tech_solution 5.3，实现岗位结论提取、结论卡与长文折叠" |
-| P4.3 | `feat/report/P4.3-share-charts` | "开始 P4.3：按 tech_solution 5.5，实现置信度、风险、决策链、多空对比图表化" |
+| P4.3 | `feat/report/P4.3-share-charts` | "开始 P4.3：按 tech_solution 5.5，实现置信度、风险、投资建议、决策链。概览不放多空对比卡，不修改结论抽取规则；多空辩论留在研究部岗位正文" |
 | P4.4 | `feat/report/P4.4-export-wechat` | "开始 P4.4：按 tech_solution 5.6，实现导出栏与微信内引导，并生成交接文档 SharePage-Components.md" |
 | P5.1 | `chore/shared-P5.1-nginx-docker` | "开始 P5.1：按 tech_solution 2.2，配置 Nginx /m/（透传真实 IP）与 Docker 构建，PR 请 A 审阅" |
 

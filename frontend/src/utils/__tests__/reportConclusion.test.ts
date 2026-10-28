@@ -1,21 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import {
-  extractRoleView,
-  plainText,
-  plainTextLength,
-} from '../reportConclusion'
+import { extractRoleView, plainText, plainTextLength } from '../reportConclusion'
 
 describe('extractRoleView 观点与原句', () => {
   it('结论段从后往前取含观点的原句，句末关键词决定标签', () => {
-    const markdown = [
-      '## 投资建议',
-      '行业景气仍在，此前看多。',
-      '综合估值后建议卖出。',
-    ].join('\n')
+    const markdown = ['## 投资建议', '行业景气仍在，此前看多。', '综合估值后建议卖出。'].join('\n')
     const view = extractRoleView(markdown)
     expect(view.conclusion).toEqual({
       stance: 'bearish',
-      sentence: '综合估值后建议卖出',
+      sentence: '综合估值后建议卖出'
     })
     expect(plainText(markdown)).toContain(view.conclusion.sentence)
   })
@@ -24,7 +16,7 @@ describe('extractRoleView 观点与原句', () => {
     const markdown = '## 结论\n先看多，最终建议卖出。'
     expect(extractRoleView(markdown).conclusion).toEqual({
       stance: 'bearish',
-      sentence: '先看多，最终建议卖出',
+      sentence: '先看多，最终建议卖出'
     })
   })
 
@@ -43,7 +35,7 @@ describe('extractRoleView 观点与原句', () => {
     const markdown = '## 结论\n公司质地不错，建议看多。\n短期不建议买入。'
     expect(extractRoleView(markdown).conclusion).toEqual({
       stance: 'bullish',
-      sentence: '公司质地不错，建议看多',
+      sentence: '公司质地不错，建议看多'
     })
   })
 
@@ -51,7 +43,7 @@ describe('extractRoleView 观点与原句', () => {
     const view = extractRoleView('## 建议\n这不是买入的时机，建议持有。')
     expect(view.conclusion).toEqual({
       stance: 'neutral',
-      sentence: '这不是买入的时机，建议持有',
+      sentence: '这不是买入的时机，建议持有'
     })
   })
 
@@ -60,38 +52,84 @@ describe('extractRoleView 观点与原句', () => {
       '## 投资建议',
       '投资评级：持有（观望）。',
       '突破买入价：HK$26.85。',
-      '跌破卖出价：HK$25.30。',
+      '跌破卖出价：HK$25.30。'
     ].join('\n')
     expect(extractRoleView(markdown).conclusion).toEqual({
       stance: 'neutral',
-      sentence: '投资评级：持有（观望）',
+      sentence: '投资评级：持有（观望）'
     })
   })
   it('持有人和持有周期不算中性观点', () => {
     expect(extractRoleView('## 结论\n第一大持有人未变。').conclusion).toEqual({
       stance: 'unknown',
-      sentence: '',
+      sentence: ''
     })
     expect(extractRoleView('## 建议\n持有周期建议：12个月。').conclusion).toEqual({
       stance: 'unknown',
-      sentence: '',
+      sentence: ''
     })
   })
 
   it('转述别人的评级、以及“买入，不是……”都不出结论', () => {
     expect(extractRoleView('开篇给出“持有（观望）”评级。').conclusion).toEqual({
       stance: 'unknown',
-      sentence: '',
+      sentence: ''
+    })
+    expect(extractRoleView('空头认为“卖出”。').conclusion).toEqual({
+      stance: 'unknown',
+      sentence: ''
     })
     const markdown = ['## 我的结论', '不是看空它。', '此刻买入，不是拥抱成长。'].join('\n')
     expect(extractRoleView(markdown).conclusion).toEqual({ stance: 'unknown', sentence: '' })
+  })
+
+  it('本人给出的评级引号仍算本岗观点', () => {
+    expect(extractRoleView('我的决定很明确：给出“卖出”建议。').conclusion).toEqual({
+      stance: 'bearish',
+      sentence: '我的决定很明确：给出“卖出”建议'
+    })
+    expect(extractRoleView('综合后给出**卖出**建议。').conclusion).toEqual({
+      stance: 'bearish',
+      sentence: '综合后给出卖出建议'
+    })
+    expect(extractRoleView('## 建议\n评级为“买入”。').conclusion).toEqual({
+      stance: 'bullish',
+      sentence: '评级为“买入”'
+    })
+  })
+
+  it('看跌/看涨作观点词，但看跌分析师称谓不算', () => {
+    expect(extractRoleView('## 结论\n结论看跌。').conclusion.stance).toBe('bearish')
+    expect(extractRoleView('## 结论\n结论看涨。').conclusion.stance).toBe('bullish')
+    expect(extractRoleView('支持看跌分析师。').conclusion).toEqual({
+      stance: 'unknown',
+      sentence: ''
+    })
+  })
+
+  it('研究经理决策句优先于后文买入机会等论据词', () => {
+    const markdown = [
+      '听完双方陈述，我的决定很明确：支持看跌分析师，给出“卖出”建议。这不是一个轻松的决定。',
+      '为什么看跌方的观点更胜一筹。多头提到的买入机会在流动性约束下站不住脚。'
+    ].join('')
+    expect(extractRoleView(markdown).conclusion).toEqual({
+      stance: 'bearish',
+      sentence: '听完双方陈述，我的决定很明确：支持看跌分析师，给出“卖出”建议'
+    })
+  })
+
+  it('买入机会 / 买入理由不当作买入评级', () => {
+    expect(extractRoleView('## 结论\n多头提到的买入机会站不住脚。').conclusion).toEqual({
+      stance: 'unknown',
+      sentence: ''
+    })
   })
 
   it('没有结论小节时只用第一个正文段落', () => {
     const markdown = '开篇建议买入。\n\n后文改口卖出。'
     expect(extractRoleView(markdown).conclusion).toEqual({
       stance: 'bullish',
-      sentence: '开篇建议买入',
+      sentence: '开篇建议买入'
     })
   })
 
@@ -108,11 +146,11 @@ describe('extractRoleView 观点与原句', () => {
       '| --- | --- |',
       '| 置信度 | 0.75 |',
       '',
-      '**最终裁决：卖出（减持）。** 在价格已处乐观区间，但不能改变减持的方向性判断。',
+      '**最终裁决：卖出（减持）。** 在价格已处乐观区间，但不能改变减持的方向性判断。'
     ].join('\n')
     expect(extractRoleView(markdown).conclusion).toEqual({
       stance: 'bearish',
-      sentence: '最终裁决：卖出（减持）',
+      sentence: '最终裁决：卖出（减持）'
     })
   })
 
@@ -128,11 +166,59 @@ describe('extractRoleView 观点与原句', () => {
       '',
       '## 五、投资建议',
       '- **买入**：当前价格低于估值，安全边际充足。',
-      '- **持有周期建议**：12个月。',
+      '- **持有周期建议**：12个月。'
     ].join('\n')
     expect(extractRoleView(markdown).conclusion).toEqual({
       stance: 'bullish',
-      sentence: '买入：当前价格低于估值，安全边际充足',
+      sentence: '买入：当前价格低于估值，安全边际充足'
+    })
+  })
+
+  it('显式裁决取首个动作，后续否定或适用人群不覆盖主结论', () => {
+    expect(extractRoleView('最终裁决：建议“持有”，暂不买入或卖出。').conclusion).toEqual({
+      stance: 'neutral',
+      sentence: '最终裁决：建议“持有”，暂不买入或卖出'
+    })
+    expect(
+      extractRoleView('核心建议：卖出（针对已持仓者）或持有现金（针对观望者）。').conclusion
+    ).toEqual({
+      stance: 'bearish',
+      sentence: '核心建议：卖出（针对已持仓者）或持有现金（针对观望者）'
+    })
+    expect(extractRoleView('最终裁决：卖出或持有现金观望。').conclusion.stance).toBe('bearish')
+    expect(
+      extractRoleView(
+        '中性派最终建议“20%战术再平衡+认沽对冲”，本质上是一个带对冲的减仓方案，而非“持有”方案。'
+      ).conclusion
+    ).toEqual({
+      stance: 'bearish',
+      sentence:
+        '中性派最终建议“20%战术再平衡+认沽对冲”，本质上是一个带对冲的减仓方案，而非“持有”方案'
+    })
+  })
+
+  it('转折后的被排除选项不覆盖前面的明确观点', () => {
+    expect(
+      extractRoleView('## 结论\n这种不对称性强烈支持采取积极的买入行动，而非观望或持有。')
+        .conclusion
+    ).toEqual({
+      stance: 'bullish',
+      sentence: '这种不对称性强烈支持采取积极的买入行动，而非观望或持有'
+    })
+  })
+
+  it('反面买入情景、持有仓位和退出观望不作为观点', () => {
+    expect(extractRoleView('## 结论\n冒进买入也可能导致资金被困。').conclusion).toEqual({
+      stance: 'unknown',
+      sentence: ''
+    })
+    expect(extractRoleView('## 结论\n持有仓位意味着完全暴露于下跌风险。').conclusion).toEqual({
+      stance: 'unknown',
+      sentence: ''
+    })
+    expect(extractRoleView('## 结论\n我们应退出观望，让数据提供清晰路标。').conclusion).toEqual({
+      stance: 'unknown',
+      sentence: ''
     })
   })
 
@@ -143,7 +229,7 @@ describe('extractRoleView 观点与原句', () => {
       '| --- | --- |',
       '| 买入 | 估值低 |',
       '',
-      '正文没有给出态度。',
+      '正文没有给出态度。'
     ].join('\n')
     expect(extractRoleView(markdown).conclusion).toEqual({ stance: 'unknown', sentence: '' })
   })
@@ -202,7 +288,7 @@ describe('extractRoleView 表与图', () => {
       '| 市盈率 | 4.1 | 6.0 |',
       '',
       '## 投资建议',
-      '估值偏低，建议买入。',
+      '估值偏低，建议买入。'
     ].join('\n')
     const view = extractRoleView(markdown)
     expect(view.table).toEqual({
@@ -210,8 +296,8 @@ describe('extractRoleView 表与图', () => {
       headers: ['指标', '公司', '行业均值'],
       rows: [
         ['市净率', '0.52', '0.65'],
-        ['市盈率', '4.1', '6.0'],
-      ],
+        ['市盈率', '4.1', '6.0']
+      ]
     })
     expect(view.chart).toEqual({
       title: '估值对比',
@@ -219,8 +305,8 @@ describe('extractRoleView 表与图', () => {
       series: ['公司', '行业均值'],
       items: [
         { label: '市净率', values: [0.52, 0.65], displays: ['0.52', '0.65'] },
-        { label: '市盈率', values: [4.1, 6], displays: ['4.1', '6.0'] },
-      ],
+        { label: '市盈率', values: [4.1, 6], displays: ['4.1', '6.0'] }
+      ]
     })
   })
 
@@ -229,14 +315,14 @@ describe('extractRoleView 表与图', () => {
       '| 名称 | 比率 | 倍数 |',
       '| --- | --- | --- |',
       '| 甲 | 6.2% | 1.2倍 |',
-      '| 乙 | 5.1% | 0.8倍 |',
+      '| 乙 | 5.1% | 0.8倍 |'
     ].join('\n')
     const chart = extractRoleView(markdown).chart
     expect(chart?.unit).toBe('%')
     expect(chart?.series).toEqual(['比率'])
     expect(chart?.items).toEqual([
       { label: '甲', values: [6.2], displays: ['6.2%'] },
-      { label: '乙', values: [5.1], displays: ['5.1%'] },
+      { label: '乙', values: [5.1], displays: ['5.1%'] }
     ])
   })
 
@@ -245,7 +331,7 @@ describe('extractRoleView 表与图', () => {
       '| 指标 | 2024A |',
       '| --- | --- |',
       '| 市净率 | 0.58 |',
-      '| 股息率 | 6.2% |',
+      '| 股息率 | 6.2% |'
     ].join('\n')
     const view = extractRoleView(markdown)
     expect(view.table?.rows).toHaveLength(2)
@@ -265,12 +351,12 @@ describe('extractRoleView 表与图', () => {
       '| 名称 | 比率 |',
       '| --- | --- |',
       '| 甲 | 10% |',
-      '| 乙 | 20% |',
+      '| 乙 | 20% |'
     ].join('\n')
     const view = extractRoleView(markdown)
     expect(view.table?.rows).toEqual([
       ['甲', '10%'],
-      ['乙', '20%'],
+      ['乙', '20%']
     ])
     expect(view.chart?.unit).toBe('%')
   })
@@ -280,7 +366,7 @@ describe('extractRoleView 表与图', () => {
       '| 名称 | 比例 |',
       '| --- | --- |',
       '| 甲 | **6.2%** |',
-      '| 乙 | **5.1%** |',
+      '| 乙 | **5.1%** |'
     ].join('\n')
     const chart = extractRoleView(markdown).chart
     expect(chart?.items[0].displays).toEqual(['6.2%'])
@@ -296,7 +382,7 @@ describe('extractRoleView 表与图', () => {
       '| 名称 | 比例 |',
       '| --- | --- |',
       '| 甲 | 10% |',
-      '| 乙 | 20% |',
+      '| 乙 | 20% |'
     ].join('\n')
     expect(extractRoleView(markdown).table?.headers).toEqual(['名称', '比例'])
   })

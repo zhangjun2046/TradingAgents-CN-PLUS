@@ -1,94 +1,74 @@
 <template>
-  <div class="risk-badge" :class="`is-${tone}`">
-    <span class="risk-label">{{ label }}</span>
-    <span class="risk-bar" aria-hidden="true">
-      <i v-for="segment in 3" :key="segment" class="risk-seg" :class="{ 'is-on': segment <= litCount }" />
+  <div class="risk-badge">
+    <span class="risk-chip">{{ displayLabel }}</span>
+    <span class="risk-bar" role="img" :aria-label="`${displayLabel}，${info.level} 段，共 ${segmentCount} 段`">
+      <i
+        v-for="segment in segmentCount"
+        :key="segment"
+        class="risk-seg"
+        :class="{ 'is-on': segment <= info.level }"
+        :style="segment <= info.level ? { background: info.color } : undefined"
+      />
     </span>
+    <span v-if="hint" class="risk-hint">{{ hint }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { riskLevelInfo, type RiskTone } from './chartData'
+import { RISK_SEGMENT_COUNT, riskDisplayLabel, riskHint, riskLevelInfo } from './chartData'
 
 const props = defineProps<{ risk: unknown }>()
 
 const info = computed(() => riskLevelInfo(props.risk))
-const label = computed(() => info.value.label)
-const tone = computed<RiskTone>(() => info.value.tone)
-
-/** 点亮的段数：低 1 段、中等 2 段、高 3 段；未知 2 段但灰显 */
-const litCount = computed(() => {
-  if (tone.value === 'low') return 1
-  if (tone.value === 'high') return 3
-  return 2
-})
+const displayLabel = computed(() => riskDisplayLabel(info.value))
+const hint = computed(() => riskHint(info.value.tone))
+const segmentCount = RISK_SEGMENT_COUNT
 </script>
 
 <style lang="scss" scoped>
 .risk-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: #f5f7fa;
-
-  &.is-low {
-    .risk-label {
-      color: #67c23a;
-    }
-
-    .risk-seg.is-on {
-      background: #67c23a;
-    }
-  }
-
-  &.is-medium {
-    .risk-label {
-      color: #e6a23c;
-    }
-
-    .risk-seg.is-on {
-      background: #e6a23c;
-    }
-  }
-
-  &.is-high {
-    .risk-label {
-      color: #f56c6c;
-    }
-
-    .risk-seg.is-on {
-      background: #f56c6c;
-    }
-  }
-
-  &.is-unknown {
-    .risk-label {
-      color: #909399;
-    }
-
-    .risk-seg.is-on {
-      background: #c0c4cc;
-    }
-  }
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
 }
 
-.risk-label {
-  font-size: 14px;
-  font-weight: 700;
+.risk-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .risk-bar {
-  display: inline-flex;
-  gap: 3px;
+  display: flex;
+  width: 100%;
+  gap: 6px;
 }
 
 .risk-seg {
-  width: 14px;
-  height: 6px;
+  flex: 1 1 0;
+  height: 10px;
+  min-width: 0;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: #d9dce3;
+}
+
+.risk-hint {
+  align-self: flex-end;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #8a9099;
+  text-align: right;
 }
 </style>

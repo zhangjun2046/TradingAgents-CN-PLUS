@@ -76,7 +76,7 @@ function onSelectDept(deptKey: string): void {
   selectTarget(deptKey)
 }
 
-/** 决策链 / 多空对比点击跳转到对应岗位：回顶 + 更新 URL 定位 */
+/** 决策链点击跳转到对应岗位：回顶 + 更新 URL 定位 */
 function onOverviewNavigate(tab: string, role: string): void {
   selectTarget(tab, role)
 }

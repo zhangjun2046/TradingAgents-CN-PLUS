@@ -1,60 +1,52 @@
 <template>
   <div class="overview-panel">
-    <!-- 投资建议 + 置信度 + 风险（P4.3） -->
+    <!-- 投资建议横幅（A 股：看多红 / 看空绿） -->
+    <section class="suggest-banner" :class="`is-${suggest.tone}`">
+      <p class="suggest-title">{{ banner.title }}</p>
+    </section>
+
+    <!-- 置信度 + 风险：左右两栏，中间分隔 -->
     <section class="card">
-      <div class="card-body">
-        <div class="decision-item">
-          <span class="label">投资建议</span>
-          <div class="value">
-            <span class="action-tag" :class="`is-${suggest.tone}`">{{ stanceLabel }}</span>
-            <span class="action-text">{{ suggest.text }}</span>
-          </div>
+      <div class="metric-row">
+        <div class="metric-cell">
+          <span class="label">模型置信度</span>
+          <ConfidenceGauge :value="confidenceValue" />
         </div>
-        <div class="metric-row">
-          <div class="metric-cell">
-            <span class="label">模型置信度</span>
-            <ConfidenceGauge :value="confidenceValue" />
-          </div>
-          <div class="metric-cell metric-cell--risk">
-            <span class="label">风险评估</span>
-            <RiskBadge :risk="report.risk_level" />
-          </div>
+        <div class="metric-split" aria-hidden="true" />
+        <div class="metric-cell metric-cell--risk">
+          <span class="label">风险评估</span>
+          <RiskBadge :risk="report.risk_level" />
         </div>
       </div>
     </section>
 
-    <!-- 决策链（P4.3） -->
+    <!-- 决策链 -->
     <section class="card">
-      <DecisionChain :departments="departments" @navigate="onNavigate" />
-    </section>
-
-    <!-- 多空对比（P4.3，仅研究部有多空研究员时显示） -->
-    <section v-if="hasBullBear" class="card">
-      <BullBearCompare :departments="departments" @navigate="onNavigate" />
+      <DecisionChain :departments="departments" :suggest="suggest" @navigate="onNavigate" />
     </section>
 
     <section v-if="keyPoints.length" class="card">
       <h2 class="section-head">关键要点</h2>
-      <ul class="key-points">
+      <ol class="key-points">
         <li v-for="(point, index) in keyPoints" :key="index">{{ point }}</li>
-      </ul>
+      </ol>
     </section>
 
-    <section v-if="summaryText" class="card">
-      <h2 class="section-head">执行摘要</h2>
-      <div class="card-body summary-text">{{ summaryText }}</div>
+    <section class="card">
+      <h2 class="section-head">分析参考</h2>
+      <div class="card-body reference-markdown">
+        <MarkdownBody :content="referenceText" />
+      </div>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
-import { STANCE_LABEL } from '@/utils/reportConclusion'
-import BullBearCompare from './BullBearCompare.vue'
 import DecisionChain from './DecisionChain.vue'
+import MarkdownBody from './MarkdownBody.vue'
 import RiskBadge from './RiskBadge.vue'
-import { buildBullBear, normalizeConfidence, suggestAction } from './chartData'
-import { formatOverviewSummary } from './overviewSummary'
+import { formatSuggestBanner, normalizeConfidence, suggestAction } from './chartData'
 import type { VisibleDept } from './shareConfig'
 import type { SharedReport } from './types'
 
@@ -69,30 +61,17 @@ const emit = defineEmits<{
 
 const keyPoints = computed(() => props.report.key_points || [])
 
-function moduleText(key: string): string {
-  const value = props.report.reports?.[key]
-  return typeof value === 'string' ? value : ''
-}
-
-/** 优先用完整裁决书抽一句；旧 summary 被表格截断时不会把半张表画出来。 */
-const summaryText = computed(() =>
-  formatOverviewSummary(
-    moduleText('final_trade_decision') ||
-      moduleText('risk_management_decision') ||
-      props.report.summary ||
-      ''
-  )
-)
+/** 与 PC 报告详情「分析参考」同一字段 `recommendation`。 */
+const referenceText = computed(() => {
+  const recommendation = props.report.recommendation
+  const text = typeof recommendation === 'string' ? recommendation.trim() : ''
+  return text || '暂无'
+})
 
 const confidenceValue = computed(() => normalizeConfidence(props.report.confidence_score))
 
 const suggest = computed(() => suggestAction(props.report))
-const stanceLabel = computed(() => STANCE_LABEL[suggest.value.tone])
-
-const hasBullBear = computed(() => {
-  const { bull, bear } = buildBullBear(props.departments)
-  return Boolean(bull || bear)
-})
+const banner = computed(() => formatSuggestBanner(suggest.value))
 
 function onNavigate(tab: string, role: string): void {
   emit('navigate', tab, role)
@@ -100,6 +79,38 @@ function onNavigate(tab: string, role: string): void {
 </script>
 
 <style lang="scss" scoped>
+.suggest-banner {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+
+  /* A 股：看多红 / 看空绿 / 中性蓝 / 未知灰 */
+  &.is-bullish {
+    background: linear-gradient(90deg, #e15252, #c93c3c);
+  }
+
+  &.is-bearish {
+    background: linear-gradient(90deg, #10b981, #059669);
+  }
+
+  &.is-neutral {
+    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+  }
+
+  &.is-unknown {
+    background: linear-gradient(90deg, #909399, #606266);
+  }
+}
+
+.suggest-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .card {
   background: #fff;
   border-radius: 12px;
@@ -134,100 +145,97 @@ function onNavigate(tab: string, role: string): void {
   padding: 16px;
 }
 
-.summary-text {
+.reference-markdown {
   padding-top: 6px;
-  font-size: 16px;
-  line-height: 1.7;
-  color: #303133;
-}
 
-.decision-item {
-  padding-bottom: 14px;
-  border-bottom: 1px solid #eef0f4;
-
-  .label {
-    display: block;
-    font-size: 13px;
-    color: #909399;
-    margin-bottom: 6px;
+  :deep(.markdown-body) {
+    font-size: 15px;
   }
 
-  .value {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
+  :deep(p) {
+    margin: 0 0 10px;
   }
 
-  .action-text {
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 1.5;
-    color: #303133;
-    word-break: break-word;
-  }
-}
-
-.action-tag {
-  flex: none;
-  padding: 4px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
-
-  &.is-bullish {
-    color: #fff;
-    background: linear-gradient(90deg, #10b981, #059669);
-  }
-
-  &.is-bearish {
-    color: #fff;
-    background: linear-gradient(90deg, #f56c6c, #e04b4b);
-  }
-
-  &.is-neutral {
-    color: #3b82f6;
-    background: #eff6ff;
-  }
-
-  &.is-unknown {
-    color: #909399;
-    background: #f5f7fa;
+  :deep(p:last-child) {
+    margin-bottom: 0;
   }
 }
 
 .metric-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: 14px;
+  align-items: stretch;
+  gap: 0;
+  padding: 16px 8px 18px;
+}
+
+.metric-split {
+  flex: 0 0 1px;
+  width: 1px;
+  margin: 4px 2px;
+  background: #e4e7ed;
 }
 
 .metric-cell {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+  padding: 2px 12px;
 
   .label {
-    font-size: 13px;
-    color: #909399;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #303133;
   }
+}
 
-  &--risk {
-    justify-content: center;
+.metric-cell--risk {
+  min-height: 0;
+
+  :deep(.risk-badge) {
+    flex: 1;
   }
 }
 
 .key-points {
   margin: 0;
-  padding: 6px 16px 16px 34px;
+  padding: 10px 16px 16px;
+  list-style: none;
+  counter-reset: key-point;
 
   li {
-    font-size: 16px;
+    position: relative;
+    padding-left: 32px;
+    margin-bottom: 10px;
+    font-size: 15px;
     line-height: 1.7;
-    margin-bottom: 8px;
+    color: #303133;
+    counter-increment: key-point;
+
+    &::before {
+      content: counter(key-point);
+      position: absolute;
+      left: 0;
+      top: 2px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #eef0f4;
+      color: #606266;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    &:last-child {
+      margin-bottom: 0;
+    }
   }
 }
 </style>
