@@ -4,7 +4,7 @@
 |----|------|
 | 生成单元 | P4.4 分享页导出 + 微信内引导 |
 | 生成日期 | 2026-10-28 |
-| 对应 Git 提交 | 验收通过并提交后回填（本文件与功能分支 `feat/report/P4.4-export-wechat` 一起提交） |
+| 对应 Git 提交 | `fc859f4`（功能分支 `feat/report/P4.4-export-wechat`；合入 `line/report` 后以 Squash 提交为准） |
 | 主要读者 | B（P5.1）、A（P5.2 联调） |
 | 设计依据 | `doc/tech_solution.md` 第 5 节（5.6 为 0.5：导出弹层）；报告字段见 `doc/handoff/Backend-API-Report.md`；手机端如何跳到本页见 `doc/handoff/H5-Architecture.md` |
 
