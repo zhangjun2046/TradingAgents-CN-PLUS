@@ -265,6 +265,69 @@ describe('extractRoleView 观点与原句', () => {
     expect(plainText(markdown)).toContain('建议买入')
   })
 
+  it('评级句里后文的不建议，不否定前面的持有', () => {
+    expect(
+      extractRoleView('**投资评级**：**持有/观望**（适合现有持仓者，不建议新建仓）').conclusion
+    ).toEqual({
+      stance: 'neutral',
+      sentence: '投资评级：持有/观望（适合现有持仓者，不建议新建仓）'
+    })
+    expect(
+      extractRoleView('投资建议: 持有，暂不建议买入或大幅减仓，但需密切关注基本面变化。').conclusion
+    ).toEqual({
+      stance: 'neutral',
+      sentence: '投资建议: 持有，暂不建议买入或大幅减仓，但需密切关注基本面变化'
+    })
+  })
+
+  it('口语结论和文末提案与正文一致，不被开头段落带走', () => {
+    const manager = ['双方都提到了买入机会。', '', '**因此，我的建议是：卖出。**'].join('\n')
+    expect(extractRoleView(manager).conclusion).toEqual({
+      stance: 'bearish',
+      sentence: '因此，我的建议是：卖出'
+    })
+    expect(extractRoleView('### 我的决策：**卖出**').conclusion).toEqual({
+      stance: 'bearish',
+      sentence: '我的决策：卖出'
+    })
+    const sentiment = ['开篇只是在复述市场。', '', '**最终交易提案：持有**'].join('\n')
+    expect(extractRoleView(sentiment).conclusion).toEqual({
+      stance: 'neutral',
+      sentence: '最终交易提案：持有'
+    })
+  })
+
+  it('评级词写在决策句的下一句时，仍取这句结论', () => {
+    const markdown = '我的决策是，现在不是追高的时候。我们应持有现有筹码。'
+    expect(extractRoleView(markdown).conclusion).toEqual({
+      stance: 'neutral',
+      sentence: '我们应持有现有筹码'
+    })
+  })
+
+  it('文首裁决标题不盖过后文的本人建议', () => {
+    const markdown = ['# 风险管理委员会最终裁决：买入', '', '我的建议是：卖出，离场观望。'].join('\n')
+    expect(extractRoleView(markdown).conclusion).toEqual({
+      stance: 'bearish',
+      sentence: '我的建议是：卖出，离场观望'
+    })
+  })
+
+  it('投资评级中性偏多显示为中性', () => {
+    expect(extractRoleView('- **投资评级**：中性偏多').conclusion).toEqual({
+      stance: 'neutral',
+      sentence: '投资评级：中性偏多'
+    })
+  })
+
+  it('汇总表里的交易建议在正文没有评级句时作为结论', () => {
+    const markdown = ['情绪偏淡。', '', '| 项目 | 结论 |', '| --- | --- |', '| 交易建议 | 观望 |'].join('\n')
+    expect(extractRoleView(markdown).conclusion).toEqual({
+      stance: 'neutral',
+      sentence: '观望'
+    })
+  })
+
   it('空正文为未识别', () => {
     expect(extractRoleView('').conclusion).toEqual({ stance: 'unknown', sentence: '' })
     expect(extractRoleView('   \n').table).toBeNull()
