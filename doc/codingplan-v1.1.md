@@ -57,7 +57,7 @@
 | P4.2 岗位结论卡 + 长文折叠 | B | `line/report` | 已合入本线 | 2026-10-27 | [#33](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/33) | 岗位结论卡（看多/看空/中性/未识别 + 一句话结论）+ 长文折叠（60vh）；观点徽章显隐（辩论席/交易员隐藏）；一句结论完整保留观点原句不截断；单测 109 通过（含组件测试 16） |
 | P4.2 结论与正文一致性修复 | B | `line/report` | 已合入本线 | 2026-10-28 | [#37](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/37) | 结论卡与观点徽章对齐正文点名结论；前端单测 156 通过；模型 Grok 4.7 |
 | P4.3 分享页图表化（置信度 / 风险 / 决策链） | B | `line/report` | 已合入本线 | 2026-10-28 | [#35](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/35) | 置信度仪表盘（ECharts 按需异步）+ 风险色块 + 投资建议结论卡 + 决策链；概览已去掉多空对比卡；概览「执行摘要」已改为「分析参考」，内容与 PC `recommendation` 一致；置信度与风险等级与 PC 共用换算；模型 DeepSeek V4 / Grok 4.7 |
-| P4.4 分享页导出 + 微信内引导 | B | `line/report` | 待启动 | — | — | 完成后生成交接文档 `SharePage-Components.md` |
+| P4.4 分享页导出 + 微信内引导 | B | `line/report` | 待合入 | 2026-10-28 | 验收通过，待网页创建 PR | 标题右侧导出弹层（复制当前页链接 + PDF / Word / Markdown）+ 微信内自动打开并引导外部浏览器；失效链接提示返回报告列表；交接文档 `SharePage-Components.md`；导出单测 10 通过；模型 Grok 4.7 |
 | P5.1 Nginx `/m/` + Docker 构建 | B | `line/report` | 待启动 | — | — | — |
 
 #### 共同单元与最终集成
@@ -218,6 +218,7 @@ flowchart LR
 | 交接文档（开发中生成） | `doc/handoff/` | 见第五章 |
 | B 线后端接口交接文档 | `doc/handoff/Backend-API-Report.md` | 报告 / 任务 / 分享 / 免登录导出接口、归属校验规则、回填与种子账号脚本用法（P1.7 生成） |
 | H5 工程交接文档 | `doc/handoff/H5-Architecture.md` | `mobile/` 目录结构、页面清单（含 A 的账号页）、store、请求封装、登录态共享、启动与构建命令（P3.5 生成） |
+| 分享页组件交接文档 | `doc/handoff/SharePage-Components.md` | 分享页组件结构、部门岗位映射、结论提取规则、URL 定位参数、导出弹层与微信引导（P4.4 生成） |
 
 > `doc/` 整个目录纳入 Git：任一方修改文档都走 PR。v1.1 起对方交接文档在对方线分支上，用 `git show` 只读查看（见第五章）。
 

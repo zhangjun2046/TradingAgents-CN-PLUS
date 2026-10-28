@@ -9,11 +9,30 @@
       <a class="back-list" :href="reportListUrl" @click="logBackToList">返回报告列表</a>
       <h1>链接已失效</h1>
       <p>{{ error }}</p>
-      <p class="hint">请向分享者重新索取链接，或返回报告列表重新打开。</p>
+      <p class="hint">请返回报告列表重新打开</p>
     </div>
 
     <article v-else-if="report" class="share-article">
-      <ShareHeader :report="report" />
+      <ShareHeader :report="report">
+        <template #actions>
+          <button type="button" class="export-open" @click="exportOpen = true">
+            <svg class="export-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4v11" />
+              <path d="M7.5 11.5 12 16l4.5-4.5" />
+              <path d="M5 20h14" />
+            </svg>
+            导出
+          </button>
+        </template>
+      </ShareHeader>
+
+      <ExportBar
+        v-model:open="exportOpen"
+        :token="shareToken"
+        :stock-symbol="report.stock_symbol"
+        :stock-name="report.stock_name"
+        :analysis-date="report.analysis_date"
+      />
 
       <DeptTabs
         :departments="departments"
@@ -48,15 +67,23 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import DeptTabs from './share/DeptTabs.vue'
+import ExportBar from './share/ExportBar.vue'
 import OverviewPanel from './share/OverviewPanel.vue'
 import RolePanel from './share/RolePanel.vue'
 import ShareHeader from './share/ShareHeader.vue'
+import { isWechatUserAgent } from './share/exportShare'
 import { OVERVIEW_DEPT_KEY, logBackToList, resolveReportListUrl } from './share/shareConfig'
 import { useShareReport } from './share/useShareReport'
 
+const route = useRoute()
 const reportListUrl = resolveReportListUrl()
+const exportOpen = ref(false)
+const wechatGuideShown = ref(false)
+const inWechat = isWechatUserAgent(typeof navigator === 'undefined' ? '' : navigator.userAgent)
+const shareToken = computed(() => String(route.params.token || ''))
 
 const {
   loading,
@@ -75,6 +102,19 @@ const {
 function onSelectDept(deptKey: string): void {
   selectTarget(deptKey)
 }
+
+watch(shareToken, () => {
+  exportOpen.value = false
+  wechatGuideShown.value = false
+})
+
+/** 微信内报告一加载就打开导出弹层，验收时不用再点一次才能看到引导 */
+watch(report, (value) => {
+  if (!value || !inWechat || wechatGuideShown.value) return
+  exportOpen.value = true
+  wechatGuideShown.value = true
+  console.info('[Share] wechat guide opened')
+})
 
 /** 决策链点击跳转到对应岗位：回顶 + 更新 URL 定位 */
 function onOverviewNavigate(tab: string, role: string): void {
@@ -145,6 +185,36 @@ onMounted(() => {
   max-width: 720px;
   margin: 0 auto;
   padding: 20px 16px 48px;
+}
+
+.export-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  border: 0;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+
+  &:hover {
+    background: #1d4ed8;
+  }
+}
+
+.export-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .disclaimer {
