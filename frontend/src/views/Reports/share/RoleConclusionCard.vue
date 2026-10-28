@@ -118,14 +118,15 @@ function barWidth(value: number): string {
   font-weight: 600;
   line-height: 1.4;
 
+  /* A 股：看多/涨红，看空/跌绿（与决策链、概览横幅一致） */
   &.is-bullish {
     color: #fff;
-    background: linear-gradient(90deg, #10b981, #059669);
+    background: linear-gradient(90deg, #e15252, #c93c3c);
   }
 
   &.is-bearish {
     color: #fff;
-    background: linear-gradient(90deg, #f56c6c, #e04b4b);
+    background: linear-gradient(90deg, #10b981, #059669);
   }
 
   &.is-neutral {

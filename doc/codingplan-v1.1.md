@@ -55,7 +55,7 @@
 | P3.5 H5 我的报告列表 | B | `line/report` | 已合入本线 | 2026-10-26 | [#27](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/27) | 我的报告列表（分页 / 下拉刷新 / 上拉加载 / 搜索 / 市场筛选 / 空态）+ 点击复用或重建分享并跳转 `/s/{token}`；分享页加「返回报告列表」；交接文档 `H5-Architecture.md`；视觉对齐 PC；模型 DeepSeek V4.1 Flash |
 | P4.1 分享页组件拆分 + 部门 / 岗位两级页签 | B | `line/report` | 待验收 | 2026-10-26 | — | 概览 / 分析部 / 研究部 / 交易部 / 风控部；空岗位与空部门不显示，单岗位不显示二级页签；单测 39 通过；模型 Grok 4.7 |
 | P4.2 岗位结论卡 + 长文折叠 | B | `line/report` | 已合入本线 | 2026-10-27 | [#33](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/33) | 岗位结论卡（看多/看空/中性/未识别 + 一句话结论）+ 长文折叠（60vh）；观点徽章显隐（辩论席/交易员隐藏）；一句结论完整保留观点原句不截断；单测 109 通过（含组件测试 16） |
-| P4.3 分享页图表化（置信度 / 风险 / 决策链 / 多空对比） | B | `line/report` | 待启动 | — | — | — |
+| P4.3 分享页图表化（置信度 / 风险 / 决策链） | B | `line/report` | 待合入 | 2026-10-28 | 验收通过，待网页创建 PR | 置信度仪表盘（ECharts 按需异步）+ 风险色块 + 投资建议结论卡 + 决策链；概览已去掉多空对比卡；概览「执行摘要」已改为「分析参考」，内容与 PC `recommendation` 一致；置信度与风险等级与 PC 共用换算；模型 DeepSeek V4 / Grok 4.7 |
 | P4.4 分享页导出 + 微信内引导 | B | `line/report` | 待启动 | — | — | 完成后生成交接文档 `SharePage-Components.md` |
 | P5.1 Nginx `/m/` + Docker 构建 | B | `line/report` | 待启动 | — | — | — |
 
@@ -1174,23 +1174,25 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 
 **分支**：`feat/report/P4.3-share-charts`
 
-**干什么**：概览页增加置信度仪表盘、风险等级色块、投资建议结论卡、决策链（各岗位观点串成一条，可点击跳转）、多空对比卡。
+**干什么**：概览页增加置信度仪表盘、风险等级色块、投资建议结论卡、决策链（各岗位观点串成一条，可点击跳转）。概览不放多空对比卡，也不从多头 / 空头正文补抽观点；辩论原文留在研究部对应岗位。概览展示「分析参考」（与 PC 报告详情同一 `recommendation` 原文），不展示「执行摘要」。
 
 **AI 干什么**
-- 新建 `OverviewPanel.vue`、`ConfidenceGauge.vue`、`RiskBadge.vue`、`DecisionChain.vue`、`BullBearCompare.vue`
+- 新建 `OverviewPanel.vue`、`ConfidenceGauge.vue`、`RiskBadge.vue`、`DecisionChain.vue`
+- 不新建多空对比卡，不修改 `reportConclusion.ts` 的抽取规则
 - 图表按需加载，不拖慢首屏
-- 对照原型图 `doc/images/h5-report-share-overview.png`、`h5-report-share-research-compare.png`
+- 对照原型图 `doc/images/h5-report-share-overview.png`（概览不含多空对比）。`h5-report-share-research-compare.png` 里的强度条和分点论据本期不做
 
 **待批准修改的已有文件**：无（仅新建；集成到 `ReportShare.vue` 的改动会在清单中说明）
 
-**人工干什么**：手机模式查看概览页，点击决策链标签确认跳转
+**人工干什么**：手机模式查看概览页，点击决策链标签确认跳转；确认概览没有多空对比卡
 
 **使用模型**：强模型
 
 **测试标准 — 通过后方可进入 P4.4**
 1. 概览页可见置信度图与风险等级
 2. 决策链按部门顺序显示，点击跳到对应岗位
-3. 研究部可见多空对比卡
+3. 概览不出现多空对比卡；多头、空头辩论在研究部岗位正文中阅读
+4. 概览展示「分析参考」，内容与 PC `recommendation` 一致；不展示「执行摘要」
 
 ---
 
@@ -1486,7 +1488,7 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 | P3.5 | `feat/report/P3.5-h5-report-list` | "开始 P3.5：按 tech_solution 4.2，实现 H5 我的报告列表，并生成交接文档 H5-Architecture.md" |
 | P4.1 | `feat/report/P4.1-share-tabs` | "开始 P4.1：按 tech_solution 5.1 / 5.2 / 5.4，分享页组件拆分与部门 - 岗位两级页签" |
 | P4.2 | `feat/report/P4.2-conclusion-card` | "开始 P4.2：按 tech_solution 5.3，实现岗位结论提取、结论卡与长文折叠" |
-| P4.3 | `feat/report/P4.3-share-charts` | "开始 P4.3：按 tech_solution 5.5，实现置信度、风险、决策链、多空对比图表化" |
+| P4.3 | `feat/report/P4.3-share-charts` | "开始 P4.3：按 tech_solution 5.5，实现置信度、风险、投资建议、决策链。概览不放多空对比卡，不修改结论抽取规则；多空辩论留在研究部岗位正文" |
 | P4.4 | `feat/report/P4.4-export-wechat` | "开始 P4.4：按 tech_solution 5.6，实现导出栏与微信内引导，并生成交接文档 SharePage-Components.md" |
 | P5.1 | `chore/shared-P5.1-nginx-docker` | "开始 P5.1：按 tech_solution 2.2，配置 Nginx /m/（透传真实 IP）与 Docker 构建，PR 合入 line/report（A 在最终集成 2 中审阅）" |
 
