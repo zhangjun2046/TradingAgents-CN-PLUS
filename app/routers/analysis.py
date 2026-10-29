@@ -12,6 +12,7 @@ import time
 import uuid
 import asyncio
 
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 from app.services.queue_service import get_queue_service, QueueService
 from app.services.analysis_service import get_analysis_service
@@ -24,15 +25,6 @@ from app.models.analysis import (
 
 router = APIRouter()
 logger = logging.getLogger("webapi")
-
-
-# v1.1 stub: replace with app.core.deps.require_admin at final integration
-async def _require_admin_local(user: dict = Depends(get_current_user)) -> dict:
-    """Allow admin users only (local stub of tech_solution 7.3 require_admin)."""
-    if not user.get("is_admin"):
-        logger.info("admin_required_denied user=%s", user.get("username"))
-        raise HTTPException(status_code=403, detail="FORBIDDEN")
-    return user
 
 
 async def ensure_task_access(task_id: str, user: dict) -> None:
@@ -747,7 +739,7 @@ async def get_task_result(
 
 @router.get("/tasks/all", response_model=Dict[str, Any])
 async def list_all_tasks(
-    user: dict = Depends(_require_admin_local),
+    user: dict = Depends(require_admin),
     status: Optional[str] = Query(None, description="任务状态过滤"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="偏移量")
@@ -1156,7 +1148,7 @@ async def get_task_details(
 @router.get("/admin/zombie-tasks")
 async def get_zombie_tasks(
     max_running_hours: int = Query(default=2, ge=1, le=72, description="最大运行时长（小时）"),
-    user: dict = Depends(_require_admin_local)
+    user: dict = Depends(require_admin)
 ):
     """获取僵尸任务列表（仅管理员）
 
@@ -1180,7 +1172,7 @@ async def get_zombie_tasks(
 @router.post("/admin/cleanup-zombie-tasks")
 async def cleanup_zombie_tasks(
     max_running_hours: int = Query(default=2, ge=1, le=72, description="最大运行时长（小时）"),
-    user: dict = Depends(_require_admin_local)
+    user: dict = Depends(require_admin)
 ):
     """清理僵尸任务（仅管理员）
 

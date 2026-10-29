@@ -7,13 +7,14 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
 
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 from app.models.config import UsageRecord, UsageStatistics
 from app.services.usage_statistics_service import usage_statistics_service
 
 logger = logging.getLogger("app.routers.usage_statistics")
 
-router = APIRouter(prefix="/api/usage", tags=["使用统计"])
+router = APIRouter(prefix="/api/usage", tags=["使用统计"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/records", summary="获取使用记录")

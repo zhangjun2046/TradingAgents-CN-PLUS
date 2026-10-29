@@ -33,14 +33,14 @@
 |------|--------|----------|------|----------|----|------|
 | P0.1 环境核验 + 磁盘约束 + `.gitignore` + 基线提交 + 集成分支 | A | `main` | 已通过 | 2026-10-22 | 基线提交 `c991581` | `doc/` 纳入 Git、忽略 `.cursor-logs/`；`dev/h5-1.0` 已建 |
 | P1.1 用户手机号字段与索引迁移 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#3](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/3) | 手机号稀疏唯一索引 + 邮箱部分唯一索引；pytest 通过；admin 登录正常；模型 grok-4.6 |
-| P1.2 短信通道（mock）+ SpecCaptcha + 验证码 + 限流 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5) | SpecCaptcha + mock 短信 + 冷却三元组；`tests/test_auth_sms.py` 通过；已进两条线分支 |
-| P1.3 注册（含密码）/ 手机号登录 / 验证码登录 / 忘记密码 | A | `line/auth` | 待启动 | — | — | v1.1 起第一个单元 |
-| P1.4 管理员接口收紧 + 公开模型接口 | A | `line/auth` | 待启动 | — | — | 按契约提供 `require_admin` 与公开模型接口；B 的 P1.6、P3.3 用桩实现，不等待本单元 |
-| P2.1 PC 登录 / 注册 / 忘记密码 / 协议页 | A | `line/auth` | 待启动 | — | — | — |
-| P2.2 PC 菜单权限 + 路由守卫 + 用户手机号 | A | `line/auth` | 待启动 | — | — | — |
-| P3.2 H5 账号页面 | A | `line/auth` | 待启动 | — | — | B 的 P3.1 已在切线前合入，`line/auth` 自带 H5 骨架 |
-| P5.3 真实短信通道接入（腾讯云） | A | `line/auth` | 待启动 | — | — | 签名 / 模板 ID 预留，审核通过后填入 |
-| P5.4 协议正文替换 + 上线检查清单 | A | `line/auth` | 待启动 | — | — | 完成后生成交接文档 `Deploy-Runbook.md`；部署项在最终集成后由 B 确认 |
+| P1.2 短信通道（mock）+ SpecCaptcha + 验证码 + 限流 | A | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#5](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/5) | v1.0 流程最后一个单元；B 已审共享文件；`tests/test_auth_sms.py` 13 通过 |
+| P1.3 注册（含密码）/ 手机号登录 / 验证码登录 / 忘记密码 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#9](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/9) | v1.1 起第一个单元；注册/双登录/重置密码 pytest 通过；含验证码 Redis 回退修复 |
+| P1.4 管理员接口收紧 + 公开模型接口 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#11](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/11) | `require_admin` + 公开模型接口与 7.3 契约一致；交接文档 `Backend-API-Auth.md` |
+| P2.1 PC 登录 / 注册 / 忘记密码 / 协议页 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#12](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/12) | PC 注册 / 验证码登录 / 忘记密码 / 协议占位页 |
+| P2.2 PC 菜单权限 + 路由守卫 + 用户手机号 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#13](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/13) | 管理菜单按角色隐藏；分析页改用公开模型接口 |
+| P3.2 H5 账号页面 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#14](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/14) | 替换最简登录页；H5 注册/忘记密码/我的/协议页 |
+| P5.3 真实短信通道接入（腾讯云） | A | `line/auth` | 已合入本线 | 2026-10-26 | 配置 `.env`（不入库） | 腾讯云 SendSms 已通；注册可收信；密钥仅本机 `.env` |
+| P5.4 协议正文替换 + 上线检查清单 | A | `line/auth` | 已合入本线 | 2026-10-26 | [#18](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/18) | HunterAgent 正式协议；主体「本公司」；邮箱 ocm@onecloudmall.com；交接 `Deploy-Runbook.md`；mock 短信关闭阻塞于 P5.3 |
 
 #### B 线进度（单股分析 + 分析报告）
 
@@ -65,7 +65,7 @@
 
 | 单元 | 负责人 | 合入目标 | 状态 | 验收日期 | PR | 备注 |
 |------|--------|----------|------|----------|----|------|
-| 最终集成 1：`line/auth` → `dev/h5-1.0` | A（B 审） | `dev/h5-1.0` | 待启动 | — | — | A 完成 P5.4 后发起 |
+| 最终集成 1：`line/auth` → `dev/h5-1.0` | A（B 审） | `dev/h5-1.0` | 已合入 dev | 2026-10-29 | [#24](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/24) | B 用 Create a merge commit 合入，未 squash |
 | 最终集成 2：`line/report` → `dev/h5-1.0` | B（A 审） | `dev/h5-1.0` | 待启动 | — | — | 最终集成 1 合入后，B 完成 P5.1 后发起；含 P1.6 桩替换 |
 | P5.2 全链路联调 + 权限巡检 + 自动化测试 | A + B | `dev/h5-1.0` | 待启动 | — | — | 两人各自验收本线需求条目，汇总成一张对照表；完成后合入 `main` 并打标签 `v1.0.0` |
 

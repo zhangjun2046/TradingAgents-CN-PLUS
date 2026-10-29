@@ -6,11 +6,12 @@ Requires MongoDB initialized by app lifespan.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.deps import require_admin
 from app.services.basics_sync_service import get_basics_sync_service
 
-router = APIRouter(prefix="/api/sync", tags=["sync"])
+router = APIRouter(prefix="/api/sync", tags=["sync"], dependencies=[Depends(require_admin)])
 
 
 @router.post("/stock_basics/run")

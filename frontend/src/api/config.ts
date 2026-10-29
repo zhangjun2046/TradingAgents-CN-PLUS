@@ -215,6 +215,27 @@ export const configApi = {
     return ApiClient.get('/api/config/models')
   },
 
+  /** 普通用户可用的脱敏模型列表（不含 key） */
+  async getPublicModels(): Promise<{
+    default_quick_model?: string
+    default_deep_model?: string
+    models: Array<{
+      name: string
+      display_name: string
+      provider: string
+      capability_level?: number
+      roles?: string[]
+    }>
+  }> {
+    const res: any = await ApiClient.get('/api/config/public/models')
+    const data = res?.data ?? res
+    return {
+      default_quick_model: data?.default_quick_model,
+      default_deep_model: data?.default_deep_model,
+      models: Array.isArray(data?.models) ? data.models : []
+    }
+  },
+
   // ========== 模型目录管理 ==========
 
   // 获取所有模型目录
@@ -427,12 +448,13 @@ export const configApi = {
     return ApiClient.get('/api/config/settings')
   },
 
-  // 获取默认模型配置
-  getDefaultModels(): Promise<{ quick_analysis_model: string; deep_analysis_model: string }> {
-    return ApiClient.get('/api/config/settings').then(settings => ({
-      quick_analysis_model: settings.quick_analysis_model || 'qwen-turbo',
-      deep_analysis_model: settings.deep_analysis_model || 'qwen-max'
-    }))
+  // 获取默认模型配置（走公开接口，普通用户不再打 /config/settings）
+  async getDefaultModels(): Promise<{ quick_analysis_model: string; deep_analysis_model: string }> {
+    const pub = await configApi.getPublicModels()
+    return {
+      quick_analysis_model: pub.default_quick_model || 'qwen-turbo',
+      deep_analysis_model: pub.default_deep_model || 'qwen-max'
+    }
   },
 
   // 更新系统设置

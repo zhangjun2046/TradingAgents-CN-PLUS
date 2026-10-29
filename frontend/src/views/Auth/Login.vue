@@ -8,52 +8,101 @@
       </div>
 
       <el-card class="login-card" shadow="always">
-        <el-form
-          :model="loginForm"
-          :rules="loginRules"
-          ref="loginFormRef"
-          label-position="top"
-          size="large"
-        >
-          <el-form-item label="用户名" prop="username">
-            <el-input
-              v-model="loginForm.username"
-              placeholder="请输入用户名"
-              prefix-icon="User"
-            />
-          </el-form-item>
-
-          <el-form-item label="密码" prop="password">
-            <el-input
-              v-model="loginForm.password"
-              type="password"
-              placeholder="请输入密码"
-              prefix-icon="Lock"
-              show-password
-              @keyup.enter="handleLogin"
-            />
-          </el-form-item>
-
-          <el-form-item>
-            <div class="form-options">
-              <el-checkbox v-model="loginForm.rememberMe">
-                记住我
-              </el-checkbox>
-            </div>
-          </el-form-item>
-
-          <el-form-item>
-            <el-button
-              type="primary"
+        <el-tabs v-model="loginTab">
+          <el-tab-pane label="密码登录" name="password">
+            <el-form
+              :model="loginForm"
+              :rules="loginRules"
+              ref="loginFormRef"
+              label-position="top"
               size="large"
-              style="width: 100%"
-              :loading="loginLoading"
-              @click="handleLogin"
             >
-              登录
-            </el-button>
-          </el-form-item>
-        </el-form>
+              <el-form-item label="账号" prop="username">
+                <el-input
+                  v-model="loginForm.username"
+                  placeholder="用户名或手机号"
+                  prefix-icon="User"
+                />
+              </el-form-item>
+              <el-form-item label="密码" prop="password">
+                <el-input
+                  v-model="loginForm.password"
+                  :type="showPassword ? 'text' : 'password'"
+                  placeholder="请输入密码"
+                  prefix-icon="Lock"
+                  @keyup.enter="handlePasswordLogin"
+                >
+                  <template #suffix>
+                    <el-icon class="pwd-toggle" @click.stop="showPassword = !showPassword">
+                      <Hide v-if="showPassword" />
+                      <View v-else />
+                    </el-icon>
+                  </template>
+                </el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  size="large"
+                  style="width: 100%"
+                  :loading="loginLoading"
+                  @click="handlePasswordLogin"
+                >
+                  登录
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
+
+          <el-tab-pane label="验证码登录" name="sms">
+            <el-form
+              :model="smsForm"
+              :rules="smsRules"
+              ref="smsFormRef"
+              label-position="top"
+              size="large"
+            >
+              <el-form-item label="手机号" prop="phone">
+                <el-input v-model="smsForm.phone" maxlength="11" placeholder="11 位手机号" />
+              </el-form-item>
+              <el-form-item label="图形验证码" prop="captchaCode">
+                <CaptchaImage
+                  ref="captchaRef"
+                  v-model="smsForm.captchaCode"
+                  @change-id="smsForm.captchaId = $event"
+                />
+              </el-form-item>
+              <el-form-item label="短信验证码" prop="code">
+                <div class="sms-row">
+                  <el-input v-model="smsForm.code" maxlength="6" placeholder="6 位短信码" />
+                  <SmsCodeButton
+                    :phone="smsForm.phone"
+                    scene="login"
+                    :captcha-id="smsForm.captchaId"
+                    :captcha-code="smsForm.captchaCode"
+                    @need-refresh="refreshCaptcha"
+                  />
+                </div>
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  size="large"
+                  style="width: 100%"
+                  :loading="loginLoading"
+                  @click="handleSmsLogin"
+                >
+                  登录
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
+        </el-tabs>
+
+        <div class="auth-links">
+          <router-link to="/register">注册账号</router-link>
+          <router-link to="/forgot-password">忘记密码</router-link>
+        </div>
       </el-card>
 
       <div class="login-footer">
@@ -71,72 +120,100 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { extractAuthError } from '@/api/auth'
+import { View, Hide } from '@element-plus/icons-vue'
+import CaptchaImage from '@/components/Auth/CaptchaImage.vue'
+import SmsCodeButton from '@/components/Auth/SmsCodeButton.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
+const loginTab = ref('password')
+const showPassword = ref(false)
 const loginFormRef = ref()
+const smsFormRef = ref()
+const captchaRef = ref()
 const loginLoading = ref(false)
 
 const loginForm = reactive({
   username: '',
-  password: '',
-  rememberMe: false
+  password: ''
 })
 
+const smsForm = reactive({
+  phone: '',
+  captchaId: '',
+  captchaCode: '',
+  code: ''
+})
+
+const phoneRule = {
+  validator: (_: unknown, value: string, cb: (e?: Error) => void) => {
+    if (!/^1[3-9]\d{9}$/.test(value || '')) cb(new Error('请输入正确手机号'))
+    else cb()
+  },
+  trigger: 'blur'
+}
+
 const loginRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' }
-  ],
+  username: [{ required: true, message: '请输入用户名或手机号', trigger: 'blur' }],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
   ]
 }
 
-const handleLogin = async () => {
-  // 防止重复提交
-  if (loginLoading.value) {
-    console.log('⏭️ 登录请求进行中，跳过重复点击')
-    return
-  }
+const smsRules = {
+  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }, phoneRule],
+  captchaCode: [{ required: true, message: '请输入图形验证码', trigger: 'blur' }],
+  code: [{ required: true, message: '请输入短信验证码', trigger: 'blur' }]
+}
 
+function refreshCaptcha() {
+  captchaRef.value?.refresh?.()
+}
+
+function afterLogin() {
+  ElMessage.success('登录成功')
+  const redirectPath = authStore.getAndClearRedirectPath()
+  router.push(redirectPath)
+}
+
+const handlePasswordLogin = async () => {
+  if (loginLoading.value) return
   try {
     await loginFormRef.value.validate()
-
     loginLoading.value = true
-    console.log('🔐 开始登录流程...')
-
-    // 调用真实的登录API
     const success = await authStore.login({
       username: loginForm.username,
       password: loginForm.password
     })
-
-    if (success) {
-      console.log('✅ 登录成功')
-      ElMessage.success('登录成功')
-
-      // 跳转到重定向路径或仪表板
-      const redirectPath = authStore.getAndClearRedirectPath()
-      console.log('🔄 重定向到:', redirectPath)
-      router.push(redirectPath)
-    } else {
-      ElMessage.error('用户名或密码错误')
-    }
-
-  } catch (error) {
-    console.error('登录失败:', error)
-    // 只有在不是表单验证错误时才显示错误消息
-    if (error.message && !error.message.includes('validate')) {
-      ElMessage.error('登录失败，请重试')
+    if (success) afterLogin()
+    else ElMessage.error('用户名或密码错误')
+  } catch (error: any) {
+    if (error?.message && !String(error.message).includes('validate')) {
+      ElMessage.error(extractAuthError(error) || '登录失败，请重试')
     }
   } finally {
     loginLoading.value = false
   }
 }
 
-
+const handleSmsLogin = async () => {
+  if (loginLoading.value) return
+  try {
+    await smsFormRef.value.validate()
+    loginLoading.value = true
+    const success = await authStore.loginBySms(smsForm.phone, smsForm.code)
+    if (success) afterLogin()
+    else ElMessage.error('验证码错误或已过期')
+  } catch (error: any) {
+    ElMessage.error(extractAuthError(error) || '登录失败，请重试')
+    refreshCaptcha()
+  } finally {
+    loginLoading.value = false
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -178,18 +255,26 @@ const handleLogin = async () => {
   }
 }
 
-.login-card {
-  .form-options {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-  }
+.sms-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
 
-  .login-tip {
-    text-align: center;
-    width: 100%;
-    color: var(--el-text-color-regular);
+.pwd-toggle {
+  cursor: pointer;
+  color: var(--el-text-color-secondary);
+  font-size: 16px;
+}
+
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+
+  a {
+    color: var(--el-color-primary);
+    font-size: 14px;
   }
 }
 

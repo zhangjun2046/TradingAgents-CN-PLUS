@@ -135,17 +135,14 @@ async def send_sms_code(
         raise SmsFlowError(409, "PHONE_REGISTERED", "手机号已注册")
     if scene in ("login", "reset") and existing is None:
         logger.info(
-            "sms_send phone=%s scene=%s platform=%s provider=%s result=skipped_unregistered captcha=%s",
+            "sms_send phone=%s scene=%s platform=%s provider=%s result=phone_not_registered captcha=%s",
             mask_phone(phone),
             scene,
             platform,
             get_sms_provider().name,
             captcha_ok,
         )
-        return {
-            "expires_in": settings.SMS_CODE_TTL_SECONDS,
-            "resend_after": settings.SMS_RESEND_INTERVAL_SECONDS,
-        }
+        raise SmsFlowError(404, "PHONE_NOT_REGISTERED", "该手机号未注册，请先注册")
 
     redis = _redis()
     cooldown_key = _cooldown_key(platform, scene, phone)

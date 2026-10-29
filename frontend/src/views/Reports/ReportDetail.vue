@@ -357,10 +357,17 @@ const shareUrl = computed(() => {
 // 获取模型配置列表
 const fetchLLMConfigs = async () => {
   try {
-    const response = await configApi.getSystemConfig() as any
-    if (response.success && response.data?.llm_configs) {
-      llmConfigs.value = response.data.llm_configs
-    }
+    const pub = await configApi.getPublicModels()
+    llmConfigs.value = (pub.models || []).map((m) => ({
+      provider: m.provider,
+      model_name: m.name,
+      model_display_name: m.display_name,
+      enabled: true,
+      max_tokens: 0,
+      temperature: 0,
+      timeout: 0,
+      retry_times: 0
+    })) as LLMConfig[]
   } catch (error) {
     console.error('获取模型配置失败:', error)
   }

@@ -9,6 +9,20 @@ export interface ApiResponse<T = unknown> {
   detail?: string;
 }
 
+export function extractErrorMessage(body: unknown, statusCode = 0): string {
+  if (typeof body === "string" && body.trim()) return body;
+  const data = body as ApiResponse & { detail?: unknown };
+  const detail = data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object") {
+    const d = detail as { message?: string; code?: string };
+    if (d.message) return d.message;
+  }
+  if (data?.message) return String(data.message);
+  if (statusCode === 429) return "请求过于频繁，请稍后重试";
+  return "请求失败";
+}
+
 export class ApiError extends Error {
   statusCode: number;
   cause?: unknown;
@@ -142,10 +156,7 @@ export function request<T>(opt: RequestOptions): Promise<T> {
 
         const body = res.data as ApiResponse<T>;
         if (res.statusCode >= 400 || body?.success === false) {
-          const msg =
-            body?.message ||
-            body?.detail ||
-            (typeof body === "string" ? body : "请求失败");
+          const msg = extractErrorMessage(body, res.statusCode);
           if (opt.silent) {
             reject(new ApiError(String(msg), res.statusCode));
             return;

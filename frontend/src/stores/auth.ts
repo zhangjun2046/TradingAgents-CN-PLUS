@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { useStorage } from '@vueuse/core'
-import { authApi } from '@/api/auth'
-import type { User, LoginForm, RegisterForm } from '@/types/auth'
+import { authApi, extractAuthError } from '@/api/auth'
+import type { User, LoginForm, PhoneRegisterForm } from '@/types/auth'
 
 export interface AuthState {
   // 认证状态
@@ -51,15 +51,20 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('user-info')
     }
 
+    const storedUser = (
+      validToken ? useStorage('user-info', null).value || null : null
+    ) as User | null
+    const storedAdmin = !!storedUser?.is_admin
+
     return {
       isAuthenticated: !!validToken,
       token: validToken,
       refreshToken: validRefreshToken,
 
-      user: validToken ? (useStorage('user-info', null).value || null) : null,
+      user: storedUser,
 
-      permissions: [],
-      roles: [],
+      permissions: storedAdmin ? ['*'] : [],
+      roles: storedAdmin ? ['admin'] : storedUser ? ['user'] : [],
 
       loginLoading: false,
       redirectPath: '/'
@@ -77,9 +82,9 @@ export const useAuthStore = defineStore('auth', {
       return this.user?.username || this.user?.email || '未知用户'
     },
     
-    // 是否为管理员
+    // 是否为管理员（以后端 is_admin 为准，不再写死）
     isAdmin(): boolean {
-      return this.roles.includes('admin')
+      return !!this.user?.is_admin || this.roles.includes('admin')
     },
     
     // 检查权限
@@ -120,6 +125,7 @@ export const useAuthStore = defineStore('auth', {
 
       if (user) {
         this.user = user
+        this.applyRolesFromUser(user)
       }
 
       // 手动保存到localStorage（确保持久化）
@@ -195,12 +201,8 @@ export const useAuthStore = defineStore('auth', {
         if (response.success) {
           const { access_token, refresh_token, user } = response.data
 
-          // 设置认证信息
+          // 设置认证信息（角色由后端 is_admin 决定）
           this.setAuthInfo(access_token, refresh_token, user)
-
-          // 开源版admin用户拥有所有权限
-          this.permissions = ['*']
-          this.roles = ['admin']
 
           // 同步用户偏好设置到 appStore
           this.syncUserPreferencesToAppStore()
@@ -224,22 +226,52 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     
-    // 注册
-    async register(registerForm: RegisterForm) {
+    applyRolesFromUser(user?: User | null) {
+      const admin = !!user?.is_admin
+      this.roles = admin ? ['admin'] : (user?.roles?.length ? user.roles : ['user'])
+      this.permissions = admin ? ['*'] : []
+    },
+
+    async loginBySms(phone: string, code: string) {
+      if (this.loginLoading) return false
+      try {
+        this.loginLoading = true
+        const response = await authApi.loginBySms({ phone, code })
+        if (response.success) {
+          const { access_token, refresh_token, user } = response.data
+          this.setAuthInfo(access_token, refresh_token, user)
+          this.syncUserPreferencesToAppStore()
+          const { setupTokenRefreshTimer } = await import('@/utils/auth')
+          setupTokenRefreshTimer()
+          return true
+        }
+        return false
+      } catch (error) {
+        console.error('验证码登录失败:', error)
+        throw error
+      } finally {
+        this.loginLoading = false
+      }
+    },
+
+    // 注册（成功即登录）
+    async register(registerForm: PhoneRegisterForm) {
       try {
         const response = await authApi.register(registerForm)
-        
+
         if (response.success) {
-          ElMessage.success('注册成功，请登录')
+          const { access_token, refresh_token, user } = response.data
+          this.setAuthInfo(access_token, refresh_token, user)
+          this.syncUserPreferencesToAppStore()
+          const { setupTokenRefreshTimer } = await import('@/utils/auth')
+          setupTokenRefreshTimer()
           return true
-        } else {
-          ElMessage.error(response.message || '注册失败')
-          return false
         }
+        ElMessage.error(response.message || '注册失败')
+        return false
       } catch (error: any) {
         console.error('注册失败:', error)
-        ElMessage.error(error.message || '注册失败，请重试')
-        return false
+        throw error
       }
     },
     
@@ -320,6 +352,7 @@ export const useAuthStore = defineStore('auth', {
 
         if (response.success) {
           this.user = response.data
+          this.applyRolesFromUser(this.user)
           console.log('✅ 用户信息获取成功:', this.user?.username)
 
           // 同步用户偏好设置到 appStore
@@ -337,10 +370,8 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     
-    // 开源版不需要权限检查，admin拥有所有权限
     async fetchUserPermissions() {
-      this.permissions = ['*']
-      this.roles = ['admin']
+      this.applyRolesFromUser(this.user)
       return true
     },
     
@@ -363,7 +394,7 @@ export const useAuthStore = defineStore('auth', {
         }
       } catch (error: any) {
         console.error('更新用户信息失败:', error)
-        ElMessage.error(error.message || '更新失败，请重试')
+        ElMessage.error(extractAuthError(error) || '更新失败，请重试')
         return false
       }
     },
@@ -423,7 +454,7 @@ export const useAuthStore = defineStore('auth', {
         }
       } catch (error: any) {
         console.error('修改密码失败:', error)
-        ElMessage.error(error.message || '修改密码失败，请重试')
+        ElMessage.error(extractAuthError(error) || '修改密码失败，请重试')
         return false
       }
     },

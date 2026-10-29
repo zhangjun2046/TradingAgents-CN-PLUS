@@ -4,9 +4,10 @@ import re
 import logging
 
 from app.core.config import settings
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 logger = logging.getLogger("webapi")
 
 SENSITIVE_KEYS = {

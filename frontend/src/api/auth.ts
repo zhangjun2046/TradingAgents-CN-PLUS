@@ -1,58 +1,71 @@
 import { ApiClient } from './request'
-import type { 
-  LoginForm, 
-  RegisterForm, 
-  LoginResponse, 
+import type {
+  LoginForm,
+  PhoneRegisterForm,
+  LoginResponse,
   RefreshTokenResponse,
   User,
-  UserPermissions,
-  ChangePasswordForm
+  ChangePasswordForm,
+  SmsSendPayload,
+  SmsLoginForm,
+  ResetPasswordBySmsForm
 } from '@/types/auth'
 
+const skipAuth = { skipAuth: true, skipAuthError: true, skipErrorHandler: true }
+const skipToast = { skipErrorHandler: true }
+
+export function extractAuthError(error: any): string {
+  const detail = error?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail?.message) return String(detail.message)
+  if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg)
+  return error?.message || '请求失败'
+}
+
 export const authApi = {
-  // 登录
   login: (data: LoginForm) =>
-    ApiClient.post<LoginResponse>('/api/auth/login', data, {
-      skipAuth: true,  // 登录请求不需要认证
-      skipAuthError: true  // 跳过 401 错误的自动处理
-    }),
+    ApiClient.post<LoginResponse>('/api/auth/login', data, skipAuth),
 
-  // 注册
-  register: (data: RegisterForm) =>
-    ApiClient.post('/api/auth/register', data, {
-      skipAuth: true,  // 注册请求不需要认证
-      skipAuthError: true  // 跳过 401 错误的自动处理
-    }),
+  loginBySms: (data: SmsLoginForm) =>
+    ApiClient.post<LoginResponse>('/api/auth/login/sms', data, skipAuth),
 
-  // 登出
-  logout: () =>
-    ApiClient.post('/api/auth/logout'),
+  register: (data: PhoneRegisterForm) =>
+    ApiClient.post<LoginResponse>('/api/auth/register', data, skipAuth),
 
-  // 刷新Token
+  getCaptcha: () =>
+    ApiClient.get<{ captcha_id: string; image_base64: string }>(
+      '/api/auth/captcha',
+      undefined,
+      skipAuth
+    ),
+
+  sendSmsCode: (data: SmsSendPayload) =>
+    ApiClient.post<{ expires_in: number; resend_after: number }>(
+      '/api/auth/sms/send',
+      data,
+      skipAuth
+    ),
+
+  resetPasswordBySms: (data: ResetPasswordBySmsForm) =>
+    ApiClient.post('/api/auth/password/reset-by-sms', data, skipAuth),
+
+  logout: () => ApiClient.post('/api/auth/logout'),
+
   refreshToken: (refreshToken: string) =>
     ApiClient.post<RefreshTokenResponse>('/api/auth/refresh', { refresh_token: refreshToken }),
 
-  // 获取用户信息
-  getUserInfo: () =>
-    ApiClient.get<User>('/api/auth/me'),
+  getUserInfo: () => ApiClient.get<User>('/api/auth/me'),
 
-  // 获取用户权限（开源版不需要，admin拥有所有权限）
-  // getUserPermissions: () =>
-  //   ApiClient.get<UserPermissions>('/api/auth/permissions'),
-
-  // 更新用户信息
   updateUserInfo: (data: Partial<User>) =>
-    ApiClient.put<User>('/api/auth/me', data),
+    ApiClient.put<User>('/api/auth/me', data, skipToast),
 
-  // 修改密码
   changePassword: (data: ChangePasswordForm) =>
-    ApiClient.post('/api/auth/change-password', data),
+    ApiClient.post('/api/auth/change-password', data, skipToast),
 
-  // 重置密码
-  resetPassword: (email: string) =>
-    ApiClient.post('/api/auth/reset-password', { email }),
+  /** 管理员重置他人密码（与忘记密码接口不同） */
+  resetPassword: (username: string, new_password: string) =>
+    ApiClient.post('/api/auth/reset-password', { username, new_password }, skipToast),
 
-  // 验证邮箱
-  verifyEmail: (token: string) =>
-    ApiClient.post('/api/auth/verify-email', { token })
+  listUsers: () =>
+    ApiClient.get<{ users: User[]; total: number }>('/api/auth/users', undefined, skipToast)
 }

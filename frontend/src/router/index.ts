@@ -55,16 +55,22 @@ const routes: RouteRecordRaw[] = [
     name: 'Analysis',
     component: () => import('@/layouts/BasicLayout.vue'),
     redirect: '/analysis/single',
+    meta: {
+      title: '股票分析',
+      requiresAuth: true
+    },
     children: [
       {
         path: 'single',
         name: 'SingleAnalysis',
-        component: () => import('@/views/Analysis/SingleAnalysis.vue')
+        component: () => import('@/views/Analysis/SingleAnalysis.vue'),
+        meta: { title: '单股分析', requiresAuth: true }
       },
       {
         path: 'batch',
         name: 'BatchAnalysis',
-        component: () => import('@/views/Analysis/BatchAnalysis.vue')
+        component: () => import('@/views/Analysis/BatchAnalysis.vue'),
+        meta: { title: '批量分析', requiresAuth: true }
       },
 
     ]
@@ -237,7 +243,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Reports/TokenStatistics.vue'),
         meta: {
           title: 'Token统计',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       }
     ]
@@ -268,7 +275,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Settings/ConfigManagement.vue'),
         meta: {
           title: '配置管理',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
+        }
+      },
+      {
+        path: 'users',
+        name: 'UserManagement',
+        component: () => import('@/views/Settings/UserManagement.vue'),
+        meta: {
+          title: '用户管理',
+          requiresAuth: true,
+          requiresAdmin: true
         }
       },
       {
@@ -277,7 +295,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/System/DatabaseManagement.vue'),
         meta: {
           title: '数据库管理',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       },
       {
@@ -286,7 +305,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/System/OperationLogs.vue'),
         meta: {
           title: '操作日志',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       },
       {
@@ -295,7 +315,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/System/LogManagement.vue'),
         meta: {
           title: '系统日志',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       },
       {
@@ -304,7 +325,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/System/MultiSourceSync.vue'),
         meta: {
           title: '多数据源同步',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       },
       {
@@ -313,7 +335,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Settings/CacheManagement.vue'),
         meta: {
           title: '缓存管理',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       },
       {
@@ -322,7 +345,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Settings/UsageStatistics.vue'),
         meta: {
           title: '使用统计',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       },
       {
@@ -331,7 +355,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/System/SchedulerManagement.vue'),
         meta: {
           title: '定时任务',
-          requiresAuth: true
+          requiresAuth: true,
+          requiresAdmin: true
         }
       }
     ]
@@ -356,7 +381,50 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '登录',
       hideInMenu: true,
+      requiresAuth: false,
       transition: 'fade'
+    }
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/Auth/Register.vue'),
+    meta: {
+      title: '注册',
+      hideInMenu: true,
+      requiresAuth: false,
+      transition: 'fade'
+    }
+  },
+  {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/views/Auth/ForgotPassword.vue'),
+    meta: {
+      title: '忘记密码',
+      hideInMenu: true,
+      requiresAuth: false,
+      transition: 'fade'
+    }
+  },
+  {
+    path: '/legal/agreement',
+    name: 'LegalAgreement',
+    component: () => import('@/views/Legal/Agreement.vue'),
+    meta: {
+      title: '用户协议',
+      hideInMenu: true,
+      requiresAuth: false
+    }
+  },
+  {
+    path: '/legal/privacy',
+    name: 'LegalPrivacy',
+    component: () => import('@/views/Legal/Privacy.vue'),
+    meta: {
+      title: '隐私政策',
+      hideInMenu: true,
+      requiresAuth: false
     }
   },
 
@@ -442,7 +510,7 @@ router.beforeEach(async (to, from, next) => {
   })
 
   // 检查是否需要认证
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+  if (to.matched.some((record) => record.meta.requiresAuth) && !authStore.isAuthenticated) {
     console.log('🔒 需要认证但用户未登录:', {
       path: to.fullPath,
       requiresAuth: to.meta.requiresAuth,
@@ -459,6 +527,13 @@ router.beforeEach(async (to, from, next) => {
 
   // 如果已登录且访问登录页，重定向到仪表板
   if (authStore.isAuthenticated && to.name === 'Login') {
+    next('/dashboard')
+    return
+  }
+
+  if (to.matched.some((record) => record.meta.requiresAdmin) && !authStore.isAdmin) {
+    console.info('[Router] admin route blocked', { path: to.path })
+    ElMessage.warning('无权限访问该页面')
     next('/dashboard')
     return
   }

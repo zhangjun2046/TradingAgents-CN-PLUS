@@ -724,7 +724,7 @@ await db.analysis_reports.create_index([("user_id", 1), ("created_at", -1)], nam
 | 场景 | 规则 |
 |------|------|
 | `scene=register` | 手机号已注册 → `PHONE_REGISTERED`（在 captcha 通过之后、发送之前检查；已消耗的 captcha 需前端刷新重取） |
-| `scene=login` / `reset` | 手机号未注册 → 为防枚举，接口仍返回成功但不发送（日志记录）；登录 / 重置时校验失败统一提示「验证码错误或已过期」 |
+| `scene=login` / `reset` | 手机号未注册 → `PHONE_NOT_REGISTERED`（不发送短信；前端提示先去注册） |
 | `register` | `agreed` 必须为 `true`，否则 `TERMS_NOT_AGREED`；`password` 不合规返回 `PASSWORD_INVALID`，此时**不消耗**短信验证码（先校验密码再核销验证码），用户可修正后重提 |
 | 图形验证码 | `easy-captcha-python` 的 `SpecCaptcha(130, 48, 4)`；明文答案仅存服务端（Redis 存 SHA256）；TTL 建议 300s；一次性；错误可刷新重取 |
 | 短信验证码校验 | 校验成功立即删除（一次性）；错误 5 次后作废该码 |
@@ -743,6 +743,7 @@ await db.analysis_reports.create_index([("user_id", 1), ("created_at", -1)], nam
 | `IP_RATE_LIMITED` | 429 | IP 维度限流 |
 | `SMS_CODE_INVALID` | 400 | 短信验证码错误或已过期 |
 | `PHONE_REGISTERED` | 409 | 手机号已注册 |
+| `PHONE_NOT_REGISTERED` | 404 | 登录/忘记密码发短信时号码未注册 |
 | `TERMS_NOT_AGREED` | 400 | 未同意协议 |
 | `PASSWORD_INVALID` | 400 | 密码不符合规则 |
 | `FORBIDDEN` | 403 | 非管理员访问管理接口 |

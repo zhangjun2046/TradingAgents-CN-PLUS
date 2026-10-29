@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """P1.6 分析任务归属校验：status / result / mark-failed / delete 按 user_id 校验，
-tasks/all 与僵尸任务接口仅管理员可访问（本地桩 _require_admin_local）。"""
+tasks/all 与僵尸任务接口仅管理员可访问（require_admin）。"""
 from __future__ import annotations
 
 import sys

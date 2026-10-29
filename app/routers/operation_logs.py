@@ -7,6 +7,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse
 
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 from app.services.operation_log_service import get_operation_log_service
 from app.models.operation_log import (
@@ -18,7 +19,7 @@ from app.models.operation_log import (
     OperationLogCreate
 )
 
-router = APIRouter(prefix="/logs", tags=["操作日志"])
+router = APIRouter(prefix="/logs", tags=["操作日志"], dependencies=[Depends(require_admin)])
 logger = logging.getLogger("webapi")
 
 
