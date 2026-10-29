@@ -66,7 +66,7 @@
 | 单元 | 负责人 | 合入目标 | 状态 | 验收日期 | PR | 备注 |
 |------|--------|----------|------|----------|----|------|
 | 最终集成 1：`line/auth` → `dev/h5-1.0` | A（B 审） | `dev/h5-1.0` | 已合入 dev | 2026-10-29 | [#24](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/24) | B 用 Create a merge commit 合入，未 squash |
-| 最终集成 2：`line/report` → `dev/h5-1.0` | B（A 审） | `dev/h5-1.0` | 待启动 | — | — | 最终集成 1 合入后，B 完成 P5.1 后发起；含 P1.6 桩替换 |
+| 最终集成 2：`line/report` → `dev/h5-1.0` | B（A 审） | `dev/h5-1.0` | 进行中 | 2026-10-29 | [#43](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/43) | 请 A 用 **Create a merge commit** 合入，不要 squash；P1.6 桩已替换为 `require_admin`；P5.1 Nginx `/m/` 延后到域名与 HTTPS |
 | P5.2 全链路联调 + 权限巡检 + 自动化测试 | A + B | `dev/h5-1.0` | 待启动 | — | — | 两人各自验收本线需求条目，汇总成一张对照表；完成后合入 `main` 并打标签 `v1.0.0` |
 
 > 状态取值：待启动 / 进行中 / 待验收 / 已合入本线 / 已合入 dev / 阻塞。单元 PR 合入本线分支后，由 AI 在**本线分支上**更新本人那张表（状态「已合入本线」、日期、PR 链接，备注写明关键产出与所用模型）；最终集成合入后统一改为「已合入 dev」。
