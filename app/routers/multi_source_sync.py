@@ -5,15 +5,16 @@ Provides endpoints for multi-source stock data synchronization
 import asyncio
 import logging
 from typing import Dict, List, Optional, Any, Union
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.core.deps import require_admin
 from app.services.multi_source_basics_sync_service import get_multi_source_sync_service
 from app.services.data_sources.manager import DataSourceManager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/sync/multi-source", tags=["Multi-Source Sync"])
+router = APIRouter(prefix="/api/sync/multi-source", tags=["Multi-Source Sync"], dependencies=[Depends(require_admin)])
 
 
 class SyncRequest(BaseModel):

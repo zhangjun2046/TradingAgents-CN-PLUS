@@ -8,12 +8,13 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 
+from app.core.deps import require_admin
 from app.routers.auth_db import get_current_user
 from app.core.database import get_mongo_db
 from app.worker.tushare_init_service import get_tushare_init_service
 from app.core.response import ok
 
-router = APIRouter(prefix="/api/tushare-init", tags=["Tushare初始化"])
+router = APIRouter(prefix="/api/tushare-init", tags=["Tushare初始化"], dependencies=[Depends(require_admin)])
 
 
 class InitializationRequest(BaseModel):

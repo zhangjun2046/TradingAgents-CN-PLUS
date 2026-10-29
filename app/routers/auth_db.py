@@ -4,6 +4,7 @@
 """
 
 import time
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
@@ -11,11 +12,11 @@ from pydantic import BaseModel
 
 from app.services.auth_service import AuthService
 from app.services.user_service import user_service
-from app.models.user import UserCreate, UserUpdate
+from app.models.user import User, UserCreate, UserUpdate
 from app.services.operation_log_service import log_operation
 from app.models.operation_log import ActionType
 from app.services.captcha_service import CaptchaError, create_captcha
-from app.services.sms_code_service import SmsFlowError, send_sms_code
+from app.services.sms_code_service import SmsFlowError, mask_phone, send_sms_code, verify_sms_code
 
 # 尝试导入日志管理器
 try:
@@ -77,11 +78,66 @@ class SendSmsRequest(BaseModel):
     captcha_code: str
 
 
+class RegisterRequest(BaseModel):
+    phone: str
+    code: str
+    password: str
+    agreed: bool = False
+
+
+class SmsLoginRequest(BaseModel):
+    phone: str
+    code: str
+
+
+class ResetPasswordBySmsRequest(BaseModel):
+    phone: str
+    code: str
+    new_password: str
+
+
 def _auth_http_error(exc) -> HTTPException:
     return HTTPException(
         status_code=exc.status,
         detail={"code": exc.code, "message": exc.message},
     )
+
+
+def _raise_auth(status: int, code: str, message: str) -> None:
+    raise HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+def _is_phone(value: str) -> bool:
+    return bool(value) and str(value).isdigit() and len(str(value)) == 11
+
+
+def _password_ok(password: str) -> bool:
+    return 6 <= len(password or "") <= 64
+
+
+def _public_user(user: User) -> dict:
+    phone = getattr(user, "phone", None)
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "name": user.username,
+        "is_admin": user.is_admin,
+        "phone": mask_phone(phone) if phone else None,
+    }
+
+
+def _token_bundle(user: User) -> dict:
+    token = AuthService.create_access_token(sub=user.username)
+    refresh_token = AuthService.create_access_token(
+        sub=user.username, expires_delta=60 * 60 * 24 * 7
+    )
+    return {
+        "access_token": token,
+        "refresh_token": refresh_token,
+        "expires_in": 60 * 60,
+        "user": _public_user(user),
+    }
 
 
 @router.get("/captcha")
@@ -113,6 +169,79 @@ async def sms_send(payload: SendSmsRequest, request: Request):
     except SmsFlowError as exc:
         raise _auth_http_error(exc) from exc
     return {"success": True, "data": data, "message": "ok"}
+
+
+@router.post("/register")
+async def register(payload: RegisterRequest):
+    """手机号 + 验证码 + 密码一次注册并登录。"""
+    if payload.agreed is not True:
+        _raise_auth(400, "TERMS_NOT_AGREED", "请先同意用户协议")
+    if not _password_ok(payload.password):
+        _raise_auth(400, "PASSWORD_INVALID", "密码长度须为 6～64 位")
+    if not _is_phone(payload.phone):
+        _raise_auth(400, "SMS_CODE_INVALID", "验证码错误或已过期")
+
+    existing = await user_service.get_user_by_phone(payload.phone)
+    if existing is not None:
+        _raise_auth(409, "PHONE_REGISTERED", "手机号已注册")
+
+    try:
+        await verify_sms_code(payload.phone, "register", payload.code)
+    except SmsFlowError as exc:
+        raise _auth_http_error(exc) from exc
+
+    user = await user_service.create_user(
+        UserCreate(
+            username=payload.phone,
+            phone=payload.phone,
+            password=payload.password,
+            agreed_terms_at=datetime.utcnow(),
+        )
+    )
+    if not user:
+        _raise_auth(409, "PHONE_REGISTERED", "手机号已注册")
+
+    logger.info("user_registered phone=%s", mask_phone(payload.phone))
+    return {"success": True, "data": _token_bundle(user), "message": "注册成功"}
+
+
+@router.post("/login/sms")
+async def login_sms(payload: SmsLoginRequest):
+    """手机号 + 短信验证码登录。未注册与错码统一返回 SMS_CODE_INVALID。"""
+    try:
+        await verify_sms_code(payload.phone, "login", payload.code)
+    except SmsFlowError as exc:
+        raise _auth_http_error(exc) from exc
+
+    user = await user_service.get_user_by_phone(payload.phone)
+    if not user or not user.is_active:
+        _raise_auth(400, "SMS_CODE_INVALID", "验证码错误或已过期")
+
+    logger.info("user_login_sms phone=%s", mask_phone(payload.phone))
+    return {"success": True, "data": _token_bundle(user), "message": "登录成功"}
+
+
+@router.post("/password/reset-by-sms")
+async def reset_password_by_sms(payload: ResetPasswordBySmsRequest):
+    """短信验证码重置密码。密码不合规时不消耗验证码。"""
+    if not _password_ok(payload.new_password):
+        _raise_auth(400, "PASSWORD_INVALID", "密码长度须为 6～64 位")
+
+    try:
+        await verify_sms_code(payload.phone, "reset", payload.code)
+    except SmsFlowError as exc:
+        raise _auth_http_error(exc) from exc
+
+    user = await user_service.get_user_by_phone(payload.phone)
+    if not user:
+        _raise_auth(400, "SMS_CODE_INVALID", "验证码错误或已过期")
+
+    ok = await user_service.reset_password(user.username, payload.new_password)
+    if not ok:
+        _raise_auth(400, "SMS_CODE_INVALID", "验证码错误或已过期")
+
+    logger.info("password_reset_sms phone=%s", mask_phone(payload.phone))
+    return {"success": True, "data": {}, "message": "ok"}
 
 
 async def get_current_user(authorization: Optional[str] = Header(default=None)) -> dict:
@@ -152,6 +281,7 @@ async def get_current_user(authorization: Optional[str] = Header(default=None)) 
     logger.debug(f"✅ 认证成功，用户: {token_data.sub}")
 
     # 返回完整的用户信息，包括偏好设置
+    phone = getattr(user, "phone", None)
     return {
         "id": str(user.id),
         "username": user.username,
@@ -159,6 +289,7 @@ async def get_current_user(authorization: Optional[str] = Header(default=None)) 
         "name": user.username,
         "is_admin": user.is_admin,
         "roles": ["admin"] if user.is_admin else ["user"],
+        "phone": mask_phone(phone) if phone else None,
         "preferences": user.preferences.model_dump() if user.preferences else {}
     }
 
@@ -214,10 +345,6 @@ async def login(payload: LoginRequest, request: Request):
             )
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-        # 生成 token
-        token = AuthService.create_access_token(sub=user.username)
-        refresh_token = AuthService.create_access_token(sub=user.username, expires_delta=60*60*24*7)  # 7天有效期
-
         # 记录登录成功日志
         await log_operation(
             user_id=str(user.id),
@@ -233,18 +360,7 @@ async def login(payload: LoginRequest, request: Request):
 
         return {
             "success": True,
-            "data": {
-                "access_token": token,
-                "refresh_token": refresh_token,
-                "expires_in": 60 * 60,
-                "user": {
-                    "id": str(user.id),
-                    "username": user.username,
-                    "email": user.email,
-                    "name": user.username,
-                    "is_admin": user.is_admin
-                }
-            },
+            "data": _token_bundle(user),
             "message": "登录成功"
         }
     except HTTPException:

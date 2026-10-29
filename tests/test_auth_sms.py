@@ -244,10 +244,11 @@ def test_register_phone_already_exists(env, monkeypatch):
     assert "sms:code:register:13800138000" not in redis.hashes
 
 
-def test_login_unregistered_returns_ok_without_sending(env):
+def test_login_unregistered_returns_not_registered(env):
     client, redis = env
     resp = _send(client, _issue(client), scene="login")
-    assert resp.status_code == 200
+    assert resp.status_code == 404
+    assert _err(resp) == "PHONE_NOT_REGISTERED"
     assert "sms:code:login:13800138000" not in redis.hashes
 
 

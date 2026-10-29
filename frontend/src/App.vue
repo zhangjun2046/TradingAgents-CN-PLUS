@@ -54,7 +54,13 @@ const checkFirstTimeSetup = async () => {
       return
     }
 
-    // 验证配置完整性
+    const { useAuthStore } = await import('@/stores/auth')
+    const authStore = useAuthStore()
+    if (!authStore.isAdmin) {
+      return
+    }
+
+    // 验证配置完整性（管理员接口）
     const response = await axios.get('/api/system/config/validate')
     if (response.data.success) {
       const result = response.data.data

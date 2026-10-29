@@ -91,9 +91,13 @@
             <el-form-item label="用户名">
               <el-input v-model="generalSettings.username" disabled />
             </el-form-item>
+
+            <el-form-item label="手机号">
+              <el-input :model-value="generalSettings.phone || '—'" disabled />
+            </el-form-item>
             
             <el-form-item label="邮箱">
-              <el-input v-model="generalSettings.email" />
+              <el-input v-model="generalSettings.email" placeholder="admin@example.com" />
             </el-form-item>
             
             <el-form-item label="语言">
@@ -532,7 +536,8 @@ watch(() => [route.path, route.query.tab], updateSectionFromRoute, { immediate: 
 // 从 authStore 获取用户信息（使用 computed 实现响应式）
 const generalSettings = ref({
   username: authStore.user?.username || 'admin',
-  email: authStore.user?.email || 'admin@example.com',
+  phone: authStore.user?.phone || '',
+  email: authStore.user?.email || '',
   language: authStore.user?.preferences?.language || 'zh-CN',
   timezone: 'Asia/Shanghai'
 })
@@ -561,7 +566,8 @@ watch(() => authStore.user, (newUser) => {
   if (newUser) {
     // 更新通用设置
     generalSettings.value.username = newUser.username || 'admin'
-    generalSettings.value.email = newUser.email || 'admin@example.com'
+    generalSettings.value.phone = newUser.phone || ''
+    generalSettings.value.email = newUser.email || ''
     generalSettings.value.language = newUser.preferences?.language || 'zh-CN'
 
     // 更新外观设置

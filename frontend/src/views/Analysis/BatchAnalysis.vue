@@ -372,14 +372,17 @@ const clearStocks = () => {
 // 初始化模型设置
 const initializeModelSettings = async () => {
   try {
-    // 获取默认模型
-    const defaultModels = await configApi.getDefaultModels()
-    modelSettings.value.quickAnalysisModel = defaultModels.quick_analysis_model
-    modelSettings.value.deepAnalysisModel = defaultModels.deep_analysis_model
-
-    // 获取所有可用的模型列表
-    const llmConfigs = await configApi.getLLMConfigs()
-    availableModels.value = llmConfigs.filter((config: any) => config.enabled)
+    const pub = await configApi.getPublicModels()
+    modelSettings.value.quickAnalysisModel = pub.default_quick_model || 'qwen-turbo'
+    modelSettings.value.deepAnalysisModel = pub.default_deep_model || 'qwen-max'
+    availableModels.value = (pub.models || []).map((m) => ({
+      provider: m.provider,
+      model_name: m.name,
+      model_display_name: m.display_name,
+      enabled: true,
+      capability_level: m.capability_level,
+      suitable_roles: m.roles
+    }))
 
     console.log('✅ 加载模型配置成功:', {
       quick: modelSettings.value.quickAnalysisModel,
