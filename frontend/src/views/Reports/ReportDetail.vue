@@ -148,13 +148,13 @@
                       v-for="star in 5"
                       :key="star"
                       class="star-icon"
-                      :class="{ active: star <= getRiskStars(report.risk_level || '中等') }"
+                      :class="{ active: star <= riskAssessment.level }"
                     >
                       <StarFilled />
                     </el-icon>
                   </div>
-                  <div class="risk-label" :style="{ color: getRiskColor(report.risk_level || '中等') }">
-                    {{ report.risk_level || '中等' }}风险
+                  <div class="risk-label" :style="{ color: riskAssessment.color }">
+                    {{ riskAssessment.label }}
                   </div>
                 </div>
               </div>
@@ -173,10 +173,10 @@
                 <div class="confidence-display">
                   <el-progress
                     type="circle"
-                    :percentage="normalizeConfidenceScore(report.confidence_score || 0)"
+                    :percentage="confidencePercent"
                     :width="120"
                     :stroke-width="10"
-                    :color="getConfidenceColor(normalizeConfidenceScore(report.confidence_score || 0))"
+                    :color="getConfidenceColor(confidencePercent)"
                   >
                     <template #default="{ percentage }">
                       <span class="confidence-text">
@@ -185,7 +185,7 @@
                       </span>
                     </template>
                   </el-progress>
-                  <div class="confidence-label">{{ getConfidenceLabel(normalizeConfidenceScore(report.confidence_score || 0)) }}</div>
+                  <div class="confidence-label">{{ getConfidenceLabel(confidencePercent) }}</div>
                 </div>
               </div>
             </el-col>
@@ -298,7 +298,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, h, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, ElInput, ElInputNumber, ElForm, ElFormItem } from 'element-plus'
+import { ElMessage, ElMessageBox, ElInput, ElInputNumber } from 'element-plus'
 import { paperApi } from '@/api/paper'
 import { stocksApi } from '@/api/stocks'
 import { configApi, type LLMConfig } from '@/api/config'
@@ -326,6 +326,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { marked } from 'marked'
 import { getMarketByStockCode } from '@/utils/market'
+import { normalizeConfidenceScore, resolveRiskLevel } from '@/utils/reportMetrics'
 import type { CurrencyAmount } from '@/api/paper'
 
 // 路由和认证
@@ -339,6 +340,8 @@ marked.setOptions({ breaks: true, gfm: true })
 // 响应式数据
 const loading = ref(true)
 const report = ref<any>(null)
+const confidencePercent = computed(() => normalizeConfidenceScore(report.value?.confidence_score))
+const riskAssessment = computed(() => resolveRiskLevel(report.value?.risk_level))
 const activeModule = ref('')
 const llmConfigs = ref<LLMConfig[]>([]) // 存储所有模型配置
 const shareDialogVisible = ref(false)
@@ -596,12 +599,31 @@ const revokeShare = async () => {
 
 const copyShareUrl = async () => {
   if (!shareUrl.value) return
+
   try {
-    await navigator.clipboard.writeText(shareUrl.value)
-    ElMessage.success('链接已复制')
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(shareUrl.value)
+      ElMessage.success('链接已复制')
+      return
+    }
+    throw new Error('insecure-context')
   } catch (error) {
-    console.error('复制分享链接失败:', error)
-    ElMessage.error('复制失败，请手动选择链接')
+    console.info('clipboard API unavailable, fallback to execCommand', error)
+    const input = document.createElement('input')
+    input.value = shareUrl.value
+    input.setAttribute('readonly', 'readonly')
+    input.style.position = 'fixed'
+    input.style.left = '-9999px'
+    document.body.appendChild(input)
+    input.select()
+    input.setSelectionRange(0, input.value.length)
+    const ok = document.execCommand('copy')
+    document.body.removeChild(input)
+    if (ok) {
+      ElMessage.success('链接已复制')
+    } else {
+      ElMessage.error('复制失败，请手动选择链接')
+    }
   }
 }
 
@@ -789,7 +811,7 @@ const applyToTrading = async () => {
             ]),
             h(ElInputNumber, {
               modelValue: tradeForm.price,
-              'onUpdate:modelValue': (val: number) => { tradeForm.price = val },
+              'onUpdate:modelValue': (val: any) => { tradeForm.price = val },
               min: 0.01,
               max: 9999,
               precision: 2,
@@ -805,7 +827,7 @@ const applyToTrading = async () => {
             ]),
             h(ElInputNumber, {
               modelValue: tradeForm.quantity,
-              'onUpdate:modelValue': (val: number) => { tradeForm.quantity = val },
+              'onUpdate:modelValue': (val: any) => { tradeForm.quantity = val },
               min: 100,
               max: maxQuantity,
               step: 100,
@@ -843,7 +865,7 @@ const applyToTrading = async () => {
       confirmButtonText: '确认下单',
       cancelButtonText: '取消',
       type: 'warning',
-      beforeClose: (action, instance, done) => {
+      beforeClose: (action, _instance, done) => {
         if (action === 'confirm') {
           // 验证输入
           if (tradeForm.quantity < 100 || tradeForm.quantity % 100 !== 0) {
@@ -862,7 +884,7 @@ const applyToTrading = async () => {
           // 检查资金是否充足
           if (recommendation.action === 'buy') {
             const totalAmount = tradeForm.price * tradeForm.quantity
-            if (totalAmount > account.cash) {
+            if (totalAmount > (account.cash as number)) {
               ElMessage.error('可用资金不足')
               return
             }
@@ -978,7 +1000,8 @@ const getModelDescription = (modelInfo: string) => {
   return `${modelInfo} - AI 大语言模型`
 }
 
-const getModuleDisplayName = (moduleName: string) => {
+const getModuleDisplayName = (moduleName: string | number) => {
+  const name = moduleName as string
   // 统一与单股分析的中文标签映射（完整的13个报告）
   const nameMap: Record<string, string> = {
     // 分析师团队 (4个)
@@ -1011,7 +1034,7 @@ const getModuleDisplayName = (moduleName: string) => {
     detailed_analysis: '📄 详细分析'
   }
   // 未匹配到时，做一个友好的回退：下划线转空格
-  return nameMap[moduleName] || moduleName.replace(/_/g, ' ')
+  return nameMap[name] || name.replace(/_/g, ' ')
 }
 
 const renderMarkdown = (content: string) => {
@@ -1021,17 +1044,6 @@ const renderMarkdown = (content: string) => {
   } catch (e) {
     return `<pre style="white-space: pre-wrap; font-family: inherit;">${content}</pre>`
   }
-}
-
-// 置信度评分相关函数
-// 将后端返回的 0-1 小数转换为 0-100 的百分制
-const normalizeConfidenceScore = (score: number) => {
-  // 如果已经是 0-100 的范围，直接返回
-  if (score > 1) {
-    return Math.round(score)
-  }
-  // 如果是 0-1 的小数，转换为百分制
-  return Math.round(score * 100)
 }
 
 const getConfidenceColor = (score: number) => {
@@ -1046,40 +1058,6 @@ const getConfidenceLabel = (score: number) => {
   if (score >= 60) return '中上'
   if (score >= 40) return '中等'
   return '较低'
-}
-
-// 风险等级相关函数
-const getRiskStars = (riskLevel: string) => {
-  const riskMap: Record<string, number> = {
-    '低': 1,
-    '中低': 2,
-    '中等': 3,
-    '中高': 4,
-    '高': 5
-  }
-  return riskMap[riskLevel] || 3
-}
-
-const getRiskColor = (riskLevel: string) => {
-  const colorMap: Record<string, string> = {
-    '低': '#67C23A',      // 绿色
-    '中低': '#95D475',    // 浅绿色
-    '中等': '#E6A23C',    // 橙色
-    '中高': '#F56C6C',    // 红色
-    '高': '#F56C6C'       // 深红色
-  }
-  return colorMap[riskLevel] || '#E6A23C'
-}
-
-const getRiskDescription = (riskLevel: string) => {
-  const descMap: Record<string, string> = {
-    '低': '风险较小，适合稳健投资者',
-    '中低': '风险可控，适合大多数投资者',
-    '中等': '风险适中，需要谨慎评估',
-    '中高': '风险较高，需要密切关注',
-    '高': '风险很高，建议谨慎投资'
-  }
-  return descMap[riskLevel] || '请根据自身风险承受能力决策'
 }
 
 // 生命周期

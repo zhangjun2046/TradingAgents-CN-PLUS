@@ -6,61 +6,52 @@
     </div>
 
     <div v-else-if="error" class="share-status share-status--error">
+      <a class="back-list" :href="reportListUrl" @click="logBackToList">返回报告列表</a>
       <h1>链接已失效</h1>
       <p>{{ error }}</p>
-      <p class="hint">请向分享者重新索取链接。</p>
+      <p class="hint">请返回报告列表重新打开</p>
     </div>
 
     <article v-else-if="report" class="share-article">
-      <header class="share-header">
-        <p class="eyebrow">TradingAgents-CN 分析报告</p>
-        <h1>{{ report.stock_name || report.stock_symbol }} 分析报告</h1>
-        <div class="meta">
-          <span v-if="report.stock_symbol">{{ report.stock_symbol }}</span>
-          <span v-if="report.analysis_date">{{ report.analysis_date }}</span>
-        </div>
-      </header>
+      <ShareHeader :report="report">
+        <template #actions>
+          <button type="button" class="export-open" @click="exportOpen = true">
+            <svg class="export-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4v11" />
+              <path d="M7.5 11.5 12 16l4.5-4.5" />
+              <path d="M5 20h14" />
+            </svg>
+            导出
+          </button>
+        </template>
+      </ShareHeader>
 
-      <section class="decision-bar">
-        <div class="decision-item">
-          <span class="label">分析参考</span>
-          <div class="value markdown-body" v-html="renderMarkdown(report.recommendation || '暂无')"></div>
-        </div>
-        <div class="decision-item">
-          <span class="label">风险评估</span>
-          <div class="value">{{ report.risk_level || '中等' }}</div>
-        </div>
-        <div class="decision-item">
-          <span class="label">模型置信度</span>
-          <div class="value">{{ confidenceText }}</div>
-        </div>
-      </section>
+      <ExportBar
+        v-model:open="exportOpen"
+        :token="shareToken"
+        :stock-symbol="report.stock_symbol"
+        :stock-name="report.stock_name"
+        :analysis-date="report.analysis_date"
+      />
 
-      <section v-if="report.key_points && report.key_points.length" class="block">
-        <h2>关键要点</h2>
-        <ul class="key-points">
-          <li v-for="(point, index) in report.key_points" :key="index">{{ point }}</li>
-        </ul>
-      </section>
+      <DeptTabs
+        :departments="departments"
+        :roles="activeDept?.roles || []"
+        :active-dept-key="location.tab"
+        :active-role-key="location.role"
+        :show-sub-tabs="showSubTabs"
+        @select="onSelectDept"
+        @select-role="selectRole"
+      />
 
-      <section v-if="report.summary" class="block">
-        <h2>执行摘要</h2>
-        <div class="markdown-body" v-html="renderMarkdown(report.summary)"></div>
-      </section>
+      <OverviewPanel
+        v-if="location.tab === OVERVIEW_DEPT_KEY"
+        :report="report"
+        :departments="departments"
+        @navigate="onOverviewNavigate"
+      />
 
-      <section
-        v-for="module in modules"
-        :key="module.key"
-        class="block module-block"
-      >
-        <h2>{{ module.title }}</h2>
-        <div
-          v-if="typeof module.content === 'string'"
-          class="markdown-body"
-          v-html="renderMarkdown(module.content)"
-        ></div>
-        <pre v-else class="json-block">{{ JSON.stringify(module.content, null, 2) }}</pre>
-      </section>
+      <RolePanel v-else-if="activeRole" :role="activeRole" />
 
       <footer class="disclaimer">
         <h2>风险提示与免责声明</h2>
@@ -76,102 +67,58 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
-
-type SharedReport = {
-  stock_symbol?: string
-  stock_name?: string
-  analysis_date?: string
-  recommendation?: string
-  risk_level?: string
-  confidence_score?: number
-  summary?: string
-  key_points?: string[]
-  reports?: Record<string, unknown>
-}
-
-const MODULE_TITLES: Record<string, string> = {
-  market_report: '市场技术分析',
-  sentiment_report: '市场情绪分析',
-  news_report: '新闻事件分析',
-  fundamentals_report: '基本面分析',
-  bull_researcher: '多头研究员观点',
-  bear_researcher: '空头研究员观点',
-  research_team_decision: '研究经理决策',
-  trader_investment_plan: '交易员计划',
-  risky_analyst: '激进分析师观点',
-  safe_analyst: '保守分析师观点',
-  neutral_analyst: '中性分析师观点',
-  risk_management_decision: '投资组合经理决策',
-  final_trade_decision: '最终交易决策',
-  investment_plan: '投资建议'
-}
-
-marked.setOptions({ breaks: true, gfm: true })
+import DeptTabs from './share/DeptTabs.vue'
+import ExportBar from './share/ExportBar.vue'
+import OverviewPanel from './share/OverviewPanel.vue'
+import RolePanel from './share/RolePanel.vue'
+import ShareHeader from './share/ShareHeader.vue'
+import { isWechatUserAgent } from './share/exportShare'
+import { OVERVIEW_DEPT_KEY, logBackToList, resolveReportListUrl } from './share/shareConfig'
+import { useShareReport } from './share/useShareReport'
 
 const route = useRoute()
-const loading = ref(true)
-const error = ref('')
-const report = ref<SharedReport | null>(null)
+const reportListUrl = resolveReportListUrl()
+const exportOpen = ref(false)
+const wechatGuideShown = ref(false)
+const inWechat = isWechatUserAgent(typeof navigator === 'undefined' ? '' : navigator.userAgent)
+const shareToken = computed(() => String(route.params.token || ''))
 
-const modules = computed(() => {
-  const reports = report.value?.reports || {}
-  return Object.entries(reports).map(([key, content]) => ({
-    key,
-    content,
-    title: MODULE_TITLES[key] || key.replace(/_/g, ' ')
-  }))
-})
+const {
+  loading,
+  error,
+  report,
+  departments,
+  activeDept,
+  activeRole,
+  showSubTabs,
+  location,
+  selectTarget,
+  selectRole,
+  fetchSharedReport,
+} = useShareReport()
 
-const confidenceText = computed(() => {
-  const score = Number(report.value?.confidence_score || 0)
-  const percent = score > 1 ? Math.round(score) : Math.round(score * 100)
-  return `${percent} 分`
-})
-
-const renderMarkdown = (content: string) => {
-  if (!content) return ''
-  try {
-    const html = marked.parse(content) as string
-    return DOMPurify.sanitize(html)
-  } catch {
-    return `<pre>${DOMPurify.sanitize(content)}</pre>`
-  }
+function onSelectDept(deptKey: string): void {
+  selectTarget(deptKey)
 }
 
-const fetchSharedReport = async () => {
-  loading.value = true
-  error.value = ''
-  try {
-    const token = String(route.params.token || '')
-    const response = await fetch(`/api/reports/share/${encodeURIComponent(token)}`)
-    if (response.status === 404) {
-      error.value = '该分享链接不存在、已过期或已被撤销。'
-      report.value = null
-      return
-    }
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const result = await response.json()
-    if (!result?.success || !result.data) {
-      error.value = '该分享链接不存在、已过期或已被撤销。'
-      report.value = null
-      return
-    }
-    report.value = result.data
-    const titleName = result.data.stock_name || result.data.stock_symbol || '分析报告'
-    document.title = `${titleName} - TradingAgents-CN`
-  } catch (err) {
-    console.info('Failed to load shared report', err)
-    error.value = '报告加载失败，请稍后重试。'
-    report.value = null
-  } finally {
-    loading.value = false
-  }
+watch(shareToken, () => {
+  exportOpen.value = false
+  wechatGuideShown.value = false
+})
+
+/** 微信内报告一加载就打开导出弹层，验收时不用再点一次才能看到引导 */
+watch(report, (value) => {
+  if (!value || !inWechat || wechatGuideShown.value) return
+  exportOpen.value = true
+  wechatGuideShown.value = true
+  console.info('[Share] wechat guide opened')
+})
+
+/** 决策链点击跳转到对应岗位：回顶 + 更新 URL 定位 */
+function onOverviewNavigate(tab: string, role: string): void {
+  selectTarget(tab, role)
 }
 
 onMounted(() => {
@@ -182,8 +129,8 @@ onMounted(() => {
 <style lang="scss" scoped>
 .report-share {
   min-height: 100vh;
-  background: #f6f7fb;
-  color: #1f2329;
+  background: #f5f7fa;
+  color: #303133;
 }
 
 .share-status {
@@ -200,7 +147,7 @@ onMounted(() => {
   p {
     font-size: 16px;
     line-height: 1.7;
-    color: #5c6370;
+    color: #909399;
     margin: 0;
   }
 
@@ -208,6 +155,14 @@ onMounted(() => {
     margin-top: 8px;
     font-size: 14px;
   }
+}
+
+.share-status .back-list {
+  display: inline-flex;
+  margin-bottom: 20px;
+  color: #3b82f6;
+  font-size: 14px;
+  text-decoration: none;
 }
 
 .spinner {
@@ -232,153 +187,49 @@ onMounted(() => {
   padding: 20px 16px 48px;
 }
 
-.share-header {
-  padding: 8px 0 20px;
+.export-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  border: 0;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
 
-  .eyebrow {
-    margin: 0 0 8px;
-    font-size: 13px;
-    letter-spacing: 0.04em;
-    color: #6b7280;
-  }
-
-  h1 {
-    margin: 0 0 12px;
-    font-size: 24px;
-    line-height: 1.35;
-    font-weight: 700;
-  }
-
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-
-    span {
-      font-size: 13px;
-      color: #3b82f6;
-      background: #e8f1ff;
-      border-radius: 999px;
-      padding: 4px 10px;
-    }
+  &:hover {
+    background: #1d4ed8;
   }
 }
 
-.decision-bar,
-.block,
+.export-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .disclaimer {
-  background: #fff;
+  background: #fdf1e0;
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 14px;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-}
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 
-.decision-item {
-  padding: 12px 0;
-  border-bottom: 1px solid #eef0f4;
-
-  &:last-child {
-    border-bottom: 0;
-    padding-bottom: 0;
-  }
-
-  &:first-child {
-    padding-top: 0;
-  }
-
-  .label {
-    display: block;
-    font-size: 13px;
-    color: #6b7280;
-    margin-bottom: 6px;
-  }
-
-  .value {
-    font-size: 17px;
-    font-weight: 600;
-    line-height: 1.6;
-  }
-}
-
-.block h2,
-.disclaimer h2 {
-  margin: 0 0 12px;
-  font-size: 18px;
-  line-height: 1.4;
-}
-
-.key-points {
-  margin: 0;
-  padding-left: 18px;
-
-  li {
+  h2 {
+    margin: 0 0 12px;
     font-size: 16px;
-    line-height: 1.7;
-    margin-bottom: 8px;
-  }
-}
-
-.markdown-body {
-  font-size: 16px;
-  line-height: 1.7;
-  word-break: break-word;
-
-  :deep(h1),
-  :deep(h2),
-  :deep(h3),
-  :deep(h4) {
     line-height: 1.4;
-    margin: 1.2em 0 0.6em;
+    color: #303133;
   }
-
-  :deep(h1) { font-size: 22px; }
-  :deep(h2) { font-size: 19px; }
-  :deep(h3) { font-size: 17px; }
-
-  :deep(p),
-  :deep(li) {
-    font-size: 16px;
-    line-height: 1.7;
-  }
-
-  :deep(img) {
-    max-width: 100%;
-    height: auto;
-  }
-
-  :deep(table) {
-    display: block;
-    width: 100%;
-    overflow-x: auto;
-    border-collapse: collapse;
-    font-size: 14px;
-  }
-
-  :deep(th),
-  :deep(td) {
-    border: 1px solid #e5e7eb;
-    padding: 8px 10px;
-    white-space: nowrap;
-  }
-
-  :deep(pre),
-  :deep(code) {
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-}
-
-.json-block {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.disclaimer {
-  background: #fff8e8;
 
   ul {
     margin: 0;
@@ -388,7 +239,7 @@ onMounted(() => {
   li {
     font-size: 14px;
     line-height: 1.7;
-    color: #6b4f12;
+    color: #606266;
     margin-bottom: 6px;
   }
 }
@@ -397,9 +248,23 @@ onMounted(() => {
   .share-article {
     padding: 16px 12px 40px;
   }
+}
+</style>
 
-  .share-header h1 {
-    font-size: 22px;
-  }
+<style lang="scss">
+/* 压过 html.dark h1–h6 { color: #fff !important }，分享页固定浅色底 */
+html.dark .report-share h1,
+html.dark .report-share h2,
+html.dark .report-share h3,
+html.dark .report-share h4,
+html.dark .report-share h5,
+html.dark .report-share h6 {
+  color: #303133 !important;
+}
+
+html.dark .report-share .section-head {
+  color: #909399 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
 }
 </style>

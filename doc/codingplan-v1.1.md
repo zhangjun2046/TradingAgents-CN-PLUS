@@ -48,23 +48,25 @@
 |------|--------|----------|------|----------|----|------|
 | P3.1 H5 工程骨架（`mobile/`） | B | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#1](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/1) | Uniapp H5 骨架 + 最简登录 + `pages.json` 一次登记全部页面；A 已审 |
 | P1.5 报告按用户隔离 + 历史回填 | B | `dev/h5-1.0` | 已合入 dev | 2026-10-23 | [#2](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/2) | 报告写入 user_id + 回填脚本 + 归属校验 + seed_test_users；pytest 29 通过；模型 Composer；A 已审 |
-| P1.7 分享 30 天 + 公开字段 + 免登录导出 | B | `line/report` | 进行中 | — | — | v1.1 起第一个单元；完成后生成交接文档 `Backend-API-Report.md` |
-| P1.6 分析任务归属校验 | B | `line/report` | 待启动 | — | — | 管理员校验先用 `analysis.py` 内的本地桩，最终集成时换成 A 的 `require_admin` |
-| P3.3 H5 单股分析表单 | B | `line/report` | 待启动 | — | — | 调公开模型接口，404 时退回内置列表（契约结构） |
-| P3.4 H5 分析进度 + 跳转报告 | B | `line/report` | 待启动 | — | — | — |
-| P3.5 H5 我的报告列表 | B | `line/report` | 待启动 | — | — | 完成后生成交接文档 `H5-Architecture.md` |
-| P4.1 分享页组件拆分 + 部门 / 岗位两级页签 | B | `line/report` | 待启动 | — | — | — |
-| P4.2 岗位结论卡 + 长文折叠 | B | `line/report` | 待启动 | — | — | — |
-| P4.3 分享页图表化（置信度 / 风险 / 决策链 / 多空对比） | B | `line/report` | 待启动 | — | — | — |
-| P4.4 分享页导出 + 微信内引导 | B | `line/report` | 待启动 | — | — | 完成后生成交接文档 `SharePage-Components.md` |
+| P1.7 分享 30 天 + 公开字段 + 免登录导出 | B | `line/report` | 已合入本线 | 2026-10-23 | [#8](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/8) | 分享默认 30 天 + 公开字段 + 免登录导出（md/pdf/docx，限流）；交接文档 `Backend-API-Report.md`；pytest 32 通过；模型 Claude |
+| P1.6 分析任务归属校验 | B | `line/report` | 已合入本线 | 2026-10-23 | [#15](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/15) | `ensure_task_access` + `_require_admin_local` 本地桩（v1.1 stub，不新建 deps.py）；`tests/test_task_access.py` 18 通过；B 线回归 63 通过；模型 Sonnet 5.5 |
+| P3.3 H5 单股分析表单 | B | `line/report` | 已合入本线 | 2026-10-25 | [#17](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/17) | 表单对照原型图；公开模型接口兜底内置列表；市场文案对齐 PC；模型 Composer |
+| P3.4 H5 分析进度 + 跳转报告 | B | `line/report` | 已合入本线 | 2026-10-26 | [#25](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/25) | 3s 轮询 + 切后台暂停 + 刷新恢复；完成后分享链接跳转 `/s/{token}`；失败可重新分析；模型 Composer |
+| P3.5 H5 我的报告列表 | B | `line/report` | 已合入本线 | 2026-10-26 | [#27](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/27) | 我的报告列表（分页 / 下拉刷新 / 上拉加载 / 搜索 / 市场筛选 / 空态）+ 点击复用或重建分享并跳转 `/s/{token}`；分享页加「返回报告列表」；交接文档 `H5-Architecture.md`；视觉对齐 PC；模型 DeepSeek V4.1 Flash |
+| P3.5 报告列表视觉 | B | `line/report` | 待合入 | 2026-10-28 | 验收通过，待网页创建 PR | 搜索图标、市场色点、状态色条、首字标、日期芯片；「查看报告」改为右侧蓝底白字胶囊按钮；卡片保持白底，未铺市场底色；模型 Grok 4.7 |
+| P4.1 分享页组件拆分 + 部门 / 岗位两级页签 | B | `line/report` | 已合入本线 | 2026-10-26 | [#31](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/31) | 概览 / 分析部 / 研究部 / 交易部 / 风控部；空岗位与空部门不显示，单岗位不显示二级页签；单测 39 通过；模型 Grok 4.7 |
+| P4.2 岗位结论卡 + 长文折叠 | B | `line/report` | 已合入本线 | 2026-10-27 | [#33](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/33) | 岗位结论卡（看多/看空/中性/未识别 + 一句话结论）+ 长文折叠（60vh）；观点徽章显隐（辩论席/交易员隐藏）；一句结论完整保留观点原句不截断；单测 109 通过（含组件测试 16） |
+| P4.2 结论与正文一致性修复 | B | `line/report` | 已合入本线 | 2026-10-28 | [#37](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/37) | 结论卡与观点徽章对齐正文点名结论；前端单测 156 通过；模型 Grok 4.7 |
+| P4.3 分享页图表化（置信度 / 风险 / 决策链） | B | `line/report` | 已合入本线 | 2026-10-28 | [#35](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/35) | 置信度仪表盘（ECharts 按需异步）+ 风险色块 + 投资建议结论卡 + 决策链；概览已去掉多空对比卡；概览「执行摘要」已改为「分析参考」，内容与 PC `recommendation` 一致；置信度与风险等级与 PC 共用换算；模型 DeepSeek V4 / Grok 4.7 |
+| P4.4 分享页导出 + 微信内引导 | B | `line/report` | 已合入本线 | 2026-10-28 | [#39](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/39) | 标题右侧导出弹层（复制当前页链接 + PDF / Word / Markdown）+ 微信内自动打开并引导外部浏览器；失效链接提示返回报告列表；交接文档 `SharePage-Components.md`；导出单测 10 通过；模型 Grok 4.7 |
 | P5.1 Nginx `/m/` + Docker 构建 | B | `line/report` | 待启动 | — | — | — |
 
 #### 共同单元与最终集成
 
 | 单元 | 负责人 | 合入目标 | 状态 | 验收日期 | PR | 备注 |
 |------|--------|----------|------|----------|----|------|
-| 最终集成 1：`line/auth` → `dev/h5-1.0` | A（B 审） | `dev/h5-1.0` | 进行中 | 2026-10-26 | [#24](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/24) | 请 B 用 **Create a merge commit** 合入，不要 squash |
-| 最终集成 2：`line/report` → `dev/h5-1.0` | B（A 审） | `dev/h5-1.0` | 待启动 | — | — | 最终集成 1 合入后，B 完成 P5.1 后发起；含 P1.6 桩替换 |
+| 最终集成 1：`line/auth` → `dev/h5-1.0` | A（B 审） | `dev/h5-1.0` | 已合入 dev | 2026-10-29 | [#24](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/24) | B 用 Create a merge commit 合入，未 squash |
+| 最终集成 2：`line/report` → `dev/h5-1.0` | B（A 审） | `dev/h5-1.0` | 进行中 | 2026-10-29 | [#43](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/43) | 请 A 用 **Create a merge commit** 合入，不要 squash；P1.6 桩已替换为 `require_admin`；P5.1 Nginx `/m/` 延后到域名与 HTTPS |
 | P5.2 全链路联调 + 权限巡检 + 自动化测试 | A + B | `dev/h5-1.0` | 待启动 | — | — | 两人各自验收本线需求条目，汇总成一张对照表；完成后合入 `main` 并打标签 `v1.0.0` |
 
 > 状态取值：待启动 / 进行中 / 待验收 / 已合入本线 / 已合入 dev / 阻塞。单元 PR 合入本线分支后，由 AI 在**本线分支上**更新本人那张表（状态「已合入本线」、日期、PR 链接，备注写明关键产出与所用模型）；最终集成合入后统一改为「已合入 dev」。
@@ -215,8 +217,11 @@ flowchart LR
 | **本开发计划（v1.1）** | `doc/codingplan-v1.1.md` | **本文档 — 操作指引（线分支独立并行版）** |
 | 开发计划 v1.0（历史） | `doc/codingplan.md` | 切换到 v1.1 之前的流程，仅作参考，不再更新 |
 | 交接文档（开发中生成） | `doc/handoff/` | 见第五章 |
+| B 线后端接口交接文档 | `doc/handoff/Backend-API-Report.md` | 报告 / 任务 / 分享 / 免登录导出接口、归属校验规则、回填与种子账号脚本用法（P1.7 生成） |
+| H5 工程交接文档 | `doc/handoff/H5-Architecture.md` | `mobile/` 目录结构、页面清单（含 A 的账号页）、store、请求封装、登录态共享、启动与构建命令（P3.5 生成） |
+| 分享页组件交接文档 | `doc/handoff/SharePage-Components.md` | 分享页组件结构、部门岗位映射、结论提取规则、URL 定位参数、导出弹层与微信引导（P4.4 生成） |
 
-> `doc/` 整个目录纳入 Git：任一方修改文档都走 PR，对方合入后 `git pull` 即可看到最新版本。
+> `doc/` 整个目录纳入 Git：任一方修改文档都走 PR。v1.1 起对方交接文档在对方线分支上，用 `git show` 只读查看（见第五章）。
 
 ---
 
@@ -1120,7 +1125,7 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 
 **分支**：`feat/report/P4.1-share-tabs`
 
-**干什么**：把分享页按"概览、分析师团队、研究部、交易部、风控部、投资决策"分一级页签，部门下按岗位分二级页签；没内容的岗位和部门不显示。
+**干什么**：把分享页按"概览、分析部、研究部、交易部、风控部"分一级页签，部门下按岗位分二级页签；没内容的岗位和部门不显示。
 
 **AI 干什么**
 - 新建 `share/shareConfig.ts`（部门岗位映射）、`useShareReport.ts`、`DeptTabs.vue`、`RolePanel.vue`、`MarkdownBody.vue`、`ShareHeader.vue`
@@ -1149,19 +1154,22 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 
 **AI 干什么**
 - 新建 `frontend/src/utils/reportConclusion.ts`（关键词识别观点、取首句、60 字截断）与 `RoleConclusionCard.vue`
+- 观点标签（看多 / 看空 / 中性 / 未识别）只出现在结论卡；二级页签只显示岗位名，不追加【看多】等
+- 多头研究员、空头研究员、交易员、激进 / 保守 / 中性分析师不显示观点徽章；分析师、研究经理、风险管理委员会主席仍显示。一句话结论与正文保留
 - 正文超过一屏多时折叠，可展开 / 收起
 - 编写结论提取单元测试
 
-**待批准修改的已有文件**：无（仅新建文件；如需调整 P4.1 已改的 `ReportShare.vue` 会说明）
+**待批准修改的已有文件**：`frontend/src/views/Reports/share/DeptTabs.vue`（二级页签只保留岗位名）；`shareConfig.ts`、`RolePanel.vue`、`RoleConclusionCard.vue`（辩论席与交易员隐藏观点徽章）
 
 **人工干什么**：抽查 3-5 个岗位，看观点标签与一句话结论是否合理
 
 **使用模型**：强模型
 
 **测试标准 — 通过后方可进入 P4.3**
-1. 每个岗位都有结论卡；识别不到观点时显示「未识别」且不显示一句话结论
-2. 长正文默认折叠，可展开
-3. 单元测试通过
+1. 需要表态的岗位识别不到观点时显示「未识别」且不显示一句话结论；多头、空头、交易员、激进 / 保守 / 中性分析师不显示观点徽章，一句话结论仍可显示
+2. 二级页签不出现【看多】【看空】【中性】；同一岗位的观点只在结论卡上显示一次
+3. 长正文默认折叠，可展开
+4. 单元测试通过
 
 ---
 
@@ -1169,23 +1177,25 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 
 **分支**：`feat/report/P4.3-share-charts`
 
-**干什么**：概览页增加置信度仪表盘、风险等级色块、投资建议结论卡、决策链（各岗位观点串成一条，可点击跳转）、多空对比卡。
+**干什么**：概览页增加置信度仪表盘、风险等级色块、投资建议结论卡、决策链（各岗位观点串成一条，可点击跳转）。概览不放多空对比卡，也不从多头 / 空头正文补抽观点；辩论原文留在研究部对应岗位。概览展示「分析参考」（与 PC 报告详情同一 `recommendation` 原文），不展示「执行摘要」。
 
 **AI 干什么**
-- 新建 `OverviewPanel.vue`、`ConfidenceGauge.vue`、`RiskBadge.vue`、`DecisionChain.vue`、`BullBearCompare.vue`
+- 新建 `OverviewPanel.vue`、`ConfidenceGauge.vue`、`RiskBadge.vue`、`DecisionChain.vue`
+- 不新建多空对比卡，不修改 `reportConclusion.ts` 的抽取规则
 - 图表按需加载，不拖慢首屏
-- 对照原型图 `doc/images/h5-report-share-overview.png`、`h5-report-share-research-compare.png`
+- 对照原型图 `doc/images/h5-report-share-overview.png`（概览不含多空对比）。`h5-report-share-research-compare.png` 里的强度条和分点论据本期不做
 
 **待批准修改的已有文件**：无（仅新建；集成到 `ReportShare.vue` 的改动会在清单中说明）
 
-**人工干什么**：手机模式查看概览页，点击决策链标签确认跳转
+**人工干什么**：手机模式查看概览页，点击决策链标签确认跳转；确认概览没有多空对比卡
 
 **使用模型**：强模型
 
 **测试标准 — 通过后方可进入 P4.4**
 1. 概览页可见置信度图与风险等级
 2. 决策链按部门顺序显示，点击跳到对应岗位
-3. 研究部可见多空对比卡
+3. 概览不出现多空对比卡；多头、空头辩论在研究部岗位正文中阅读
+4. 概览展示「分析参考」，内容与 PC `recommendation` 一致；不展示「执行摘要」
 
 ---
 
@@ -1479,9 +1489,11 @@ AI 的单个对话记忆有限：换模型、开新对话、隔天继续时，�
 | P3.3 | `feat/report/P3.3-h5-analysis-form` | "开始 P3.3：按 tech_solution 4.1.1 / 4.1.2，实现 H5 单股分析表单，模型选项调用 /api/config/public/models，接口 404 或失败时退回按 7.3 契约结构写的内置列表，对照原型图 h5-single-analysis-main-v3.png" |
 | P3.4 | `feat/report/P3.4-h5-progress` | "开始 P3.4：按 tech_solution 4.1.3 / 4.1.4，实现 H5 分析进度轮询与完成后跳转分享页" |
 | P3.5 | `feat/report/P3.5-h5-report-list` | "开始 P3.5：按 tech_solution 4.2，实现 H5 我的报告列表，并生成交接文档 H5-Architecture.md" |
+| P3.5 视觉 | `feat/report/P3.5-list-visual` | "从 origin/line/report 开分支，优化 H5 报告列表视觉：图标、状态色条、首字标、日期芯片，以及右侧「查看报告」胶囊按钮；卡片保持白底；PR 合入 line/report" |
 | P4.1 | `feat/report/P4.1-share-tabs` | "开始 P4.1：按 tech_solution 5.1 / 5.2 / 5.4，分享页组件拆分与部门 - 岗位两级页签" |
 | P4.2 | `feat/report/P4.2-conclusion-card` | "开始 P4.2：按 tech_solution 5.3，实现岗位结论提取、结论卡与长文折叠" |
-| P4.3 | `feat/report/P4.3-share-charts` | "开始 P4.3：按 tech_solution 5.5，实现置信度、风险、决策链、多空对比图表化" |
+| P4.2 修复 | `feat/report/P4.2-conclusion-consistency` | "修复 P4.2：从 origin/line/report 开分支，让结论卡和观点徽章与正文点名结论一致，PR 合入 line/report" |
+| P4.3 | `feat/report/P4.3-share-charts` | "开始 P4.3：按 tech_solution 5.5，实现置信度、风险、投资建议、决策链。概览不放多空对比卡，不修改结论抽取规则；多空辩论留在研究部岗位正文" |
 | P4.4 | `feat/report/P4.4-export-wechat` | "开始 P4.4：按 tech_solution 5.6，实现导出栏与微信内引导，并生成交接文档 SharePage-Components.md" |
 | P5.1 | `chore/shared-P5.1-nginx-docker` | "开始 P5.1：按 tech_solution 2.2，配置 Nginx /m/（透传真实 IP）与 Docker 构建，PR 合入 line/report（A 在最终集成 2 中审阅）" |
 

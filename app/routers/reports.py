@@ -20,10 +20,13 @@ from ..services.report_share_service import (
     PUBLIC_NOT_FOUND,
     ReportNotFoundError,
     build_owner_filter,
+    check_download_rate_limit,
     create_or_reuse_share,
     find_serialized_report,
     get_active_share,
     get_public_report_by_token,
+    mask_token,
+    record_share_download,
     revoke_shares,
 )
 import logging
@@ -284,6 +287,79 @@ async def get_shared_report(token: str):
     except Exception as e:
         logger.error(f"❌ 获取公开分享报告失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+_SHARE_EXPORT_FORMATS = {
+    "markdown": ("md", "text/markdown; charset=utf-8"),
+    "pdf": ("pdf", "application/pdf"),
+    "docx": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+}
+
+
+def _build_share_download_headers(report: Dict[str, Any], ext: str) -> Dict[str, str]:
+    """构造 Content-Disposition：{股票代码}_{日期}_HunterAgent.{ext}，filename* 使用 UTF-8 编码。"""
+    from urllib.parse import quote
+    import re
+
+    def _safe(text: str) -> str:
+        return re.sub(r'[\\/:*?"<>|\s]+', "-", str(text or "")).strip("-")
+
+    symbol = _safe(report.get("stock_symbol")) or "report"
+    date_text = _safe(report.get("analysis_date")) or _safe(str(report.get("created_at", ""))[:10]) \
+        or datetime.now().strftime("%Y-%m-%d")
+    filename = f"{symbol}_{date_text}_HunterAgent.{ext}"
+    ascii_name = filename.encode("ascii", "ignore").decode() or f"report.{ext}"
+    return {
+        "Content-Disposition": f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'
+    }
+
+
+@router.get("/share/{token}/download")
+async def download_shared_report(
+    token: str,
+    format: str = Query("markdown", description="导出格式: markdown, pdf, docx"),
+):
+    """凭分享 token 免登录导出报告（内容与公开页一致，不含内部字段）"""
+    from starlette.concurrency import run_in_threadpool
+    from app.utils.report_exporter import report_exporter
+
+    fmt = (format or "").lower()
+    if fmt not in _SHARE_EXPORT_FORMATS:
+        raise HTTPException(status_code=400, detail=f"不支持的下载格式: {format}")
+
+    # 先限流再查库，避免被刷时仍打到数据库
+    if not await check_download_rate_limit(token):
+        logger.info("share_download_rate_limited token=%s format=%s", mask_token(token), fmt)
+        raise HTTPException(status_code=429, detail="下载过于频繁，请稍后再试")
+
+    try:
+        report, _meta = await get_public_report_by_token(token)
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail=PUBLIC_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"❌ 分享导出读取报告失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if fmt == "pdf" and not report_exporter.pdf_available:
+        raise HTTPException(status_code=400, detail="PDF 导出功能不可用。")
+    if fmt == "docx" and not report_exporter.docx_available:
+        raise HTTPException(status_code=400, detail="Word 导出功能不可用。")
+
+    try:
+        if fmt == "markdown":
+            content = (await run_in_threadpool(report_exporter.generate_markdown_report, report)).encode("utf-8")
+        elif fmt == "pdf":
+            content = await run_in_threadpool(report_exporter.generate_pdf_report, report)
+        else:
+            content = await run_in_threadpool(report_exporter.generate_docx_report, report)
+    except Exception as e:
+        logger.error(f"❌ 分享导出生成失败 format={fmt}: {e}")
+        raise HTTPException(status_code=500, detail=f"文档生成失败: {str(e)}")
+
+    await record_share_download(token.strip())
+    logger.info("share_download token=%s format=%s", mask_token(token), fmt)
+    ext, media_type = _SHARE_EXPORT_FORMATS[fmt]
+    return Response(content=content, media_type=media_type, headers=_build_share_download_headers(report, ext))
 
 
 @router.post("/{report_id}/share")

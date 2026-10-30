@@ -4,7 +4,7 @@
 |----|------|
 | 产品名 | **HunterAgent** |
 | 版本 | 1.0 |
-| 文档状态 | 评审中（0.4 已确认腾讯云短信） |
+| 文档状态 | 评审中（0.5 已确认分享页导出弹层） |
 | 关联文档 | [requirement.md](./requirement.md)（需求说明书 v1.4）、[tech.md](./tech.md)（技术与合规决策纪要） |
 | 编制日期 | 2026-10-21 |
 
@@ -16,6 +16,7 @@
 | 0.2 | 2026-10-21 | 首轮评审决策：注册页一次填完密码；`usage_statistics` 仅管理员；分析任务进度 / 结果校验归属；短信供应商待定（见第 13 节） |
 | 0.3 | 2026-10-22 | 对齐需求 1.3：发短信前 SpecCaptcha（表单内联）；短信冷却维度改为 `(platform, scene, phone)`；Mock 不豁免图形验证 |
 | 0.4 | 2026-10-22 | 短信通道确认腾讯云；补充 tencent Provider 与配置项；签名 / 模板 ID 环境变量预留 |
+| 0.5 | 2026-10-28 | 分享页导出改为标题右侧按钮 + 弹层（窄屏贴底、宽屏居中）；微信内自动打开弹层并引导外部浏览器。免登录导出接口不变 |
 
 ---
 
@@ -518,7 +519,7 @@ export interface DeptDef { key: string; name: string; roles: RoleDef[] }
 export const DEPARTMENTS: DeptDef[] = [
   { key: 'overview', name: '概览', roles: [] },
   {
-    key: 'analysts', name: '分析师团队', roles: [
+    key: 'analysts', name: '分析部', roles: [
       { key: 'market', name: '市场分析师', fields: ['market_report'] },
       { key: 'fundamentals', name: '基本面分析师', fields: ['fundamentals_report'] },
       { key: 'news', name: '新闻分析师', fields: ['news_report'] },
@@ -535,18 +536,17 @@ export const DEPARTMENTS: DeptDef[] = [
   { key: 'trading', name: '交易部', roles: [{ key: 'trader', name: '交易员', fields: ['trader_investment_plan'] }] },
   {
     key: 'risk', name: '风控部', roles: [
-      { key: 'risky', name: '激进风控分析师', fields: ['risky_analyst'] },
-      { key: 'safe', name: '保守风控分析师', fields: ['safe_analyst'] },
-      { key: 'neutral', name: '中性风控分析师', fields: ['neutral_analyst'] },
-      { key: 'riskManager', name: '风险经理', fields: ['risk_management_decision'] },
+      { key: 'risky', name: '激进分析师', fields: ['risky_analyst'] },
+      { key: 'safe', name: '保守分析师', fields: ['safe_analyst'] },
+      { key: 'neutral', name: '中性分析师', fields: ['neutral_analyst'] },
+      { key: 'riskManager', name: '风险管理委员会主席', fields: ['risk_management_decision', 'final_trade_decision'] },
     ],
   },
-  { key: 'decision', name: '投资决策', roles: [{ key: 'final', name: '投资决策', fields: ['final_trade_decision'] }] },
 ]
 ```
 
 - `fields` 多个时取第一个非空字段；
-- 显示规则在 `useShareReport.ts` 中派生：岗位内容为空则剔除；部门无岗位则剔除（概览除外）；部门只剩 1 个岗位时 `showSubTabs = false`；
+- 显示规则在 `useShareReport.ts` 中派生：岗位内容为空则剔除；部门无岗位则剔除（概览除外）；部门至少两个岗位时才显示二级页签；
 - `reports` 中出现映射表外的字段时，追加到「其他」部门，避免内容丢失。
 
 ### 5.3 结论提取规则（`utils/reportConclusion.ts`）
@@ -602,16 +602,23 @@ ECharts 采用异步组件加载，避免拖慢首屏；首屏只渲染概览。
 
 ```mermaid
 flowchart LR
-  click[点击导出] --> isWx{微信内置浏览器}
-  isWx -->|是| guide[WechatGuide 遮罩: 右上角在浏览器打开 / 复制链接]
-  isWx -->|否| dl["window.location.href = /api/reports/share/{token}/download?format=x"]
-  dl --> file[浏览器下载 md / pdf / docx]
+  openPage[打开分享页] --> isWx{微信内置浏览器}
+  isWx -->|是| sheet[自动打开导出弹层]
+  isWx -->|否| read[阅读报告]
+  read --> tap[点击标题右侧导出]
+  tap --> sheet
+  sheet --> copy[复制当前分享页链接]
+  sheet --> dl[立即导出]
+  dl --> fetchDl["fetch /api/reports/share/{token}/download?format=x"]
+  fetchDl --> file[隐藏 a 下载 md / pdf / docx]
+  fetchDl --> toast[失败时提示条]
 ```
 
-- 微信 UA 判断：`/MicroMessenger/i.test(navigator.userAgent)`；
-- 「复制链接」使用 `navigator.clipboard`，非安全上下文回退 `document.execCommand('copy')`（与当前 `ReportDetail.vue` 未提交改动的写法一致）；
-- 导出按钮位于页面底部固定栏（移动端）/ 头部右侧（PC 宽屏）；
-- PDF 生成较慢时按钮显示 loading，使用隐藏 `<a download>` 触发，失败时 toast。
+- 入口在标题行右侧，按钮文案为「导出」。点击后打开弹层：窄屏贴在底部，宽屏（≥768px）改为居中卡片。弹层内是 PDF / Word / Markdown 三个「立即导出」，底部可「取消」回到阅读。
+- 微信 UA 判断：`/MicroMessenger/i.test(navigator.userAgent)`。微信内报告加载成功后自动打开该弹层（可关闭后继续阅读）；弹层内黄色提示，并在右上角显示气泡，说明点右上角「…」后「在浏览器中打开」。
+- 弹层内始终有「一键复制报告链接」，复制的是当前分享页地址，不是下载接口地址。点击时先同步复制，再尝试 `navigator.clipboard`；非安全上下文或剪贴板被拒绝时使用已完成的 `document.execCommand('copy')`。黄色提示和右上角气泡只在微信内出现。
+- 下载调用免登录接口，不带登录头，也不整页跳转到接口地址（否则 429 会变成一页 JSON）。PDF 生成期间该按钮显示「导出中」；成功用隐藏 `<a download>`；失败用提示条。429 固定为「下载过于频繁，请稍后再试」，404 / 410 固定为「请返回报告列表重新打开」。
+- 分享页本身 404 / 410 时，标题为「链接已失效」，并提示「请返回报告列表重新打开」。
 
 ### 5.7 数据获取
 
@@ -1018,7 +1025,7 @@ async def ensure_task_access(task_id: str, user: dict) -> None:
 | 范围 | 方式 |
 |------|------|
 | `reportConclusion.ts` | Vitest 单测：看多 / 看空 / 中性 / 未识别、结论小节优先、60 字截断 |
-| `useShareReport.ts` | 单测：空岗位剔除、空部门剔除、单岗位不显示二级页签、未知字段归入「其他」 |
+| `useShareReport.ts` | 单测：空岗位剔除、空部门剔除、单个岗位不显示二级页签、未知字段归入「其他」 |
 | H5 校验工具 | 单测：手机号、各市场股票代码、密码规则 |
 | E2E | Playwright（移动端视口 iPhone 13 / Pixel 7）：注册（含图形码 + 短信码 + 密码）→ 提交分析（mock 小模型）→ 进度 → 分享页 → 切换页签 → 导出 |
 | 真机 | 微信内置浏览器（iOS / Android）、iOS Safari、Android Chrome 各走一遍主流程 |
@@ -1080,3 +1087,4 @@ flowchart LR
 | 4 | 短信供应商 | **腾讯云**；可插拔保留 mock；签名 `SMS_SIGN_NAME`、模板 `SMS_TEMPLATE_ID` 预留，审核通过后注入 | 已确认 | 7.2.2、11、12 |
 | 5 | 发短信前图形验证 | 必须通过；`easy-captcha-python` SpecCaptcha；前端表单内联展示（常驻图 + 输入框）；Mock 不豁免 | 已确认 | 4.3、6、7.2、9、10、11 |
 | 6 | 短信重发冷却维度 | `(platform, scene, phone)`，间隔 60 秒；不同端或不同场景互不影响；日上限仍按手机号 | 已确认 | 7.2、9、10 |
+| 7 | 分享页导出入口形态 | 标题右侧「导出」打开弹层（复制当前页链接 + PDF / Word / Markdown）。微信内自动打开弹层并引导外部浏览器。不改免登录导出接口 | 已确认（B，P4.4） | 5.6 |

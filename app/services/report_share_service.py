@@ -13,10 +13,15 @@ from app.utils.timezone import to_config_tz
 
 logger = logging.getLogger("webapi")
 
-DEFAULT_EXPIRES_DAYS = 7
+DEFAULT_EXPIRES_DAYS = 30
 MAX_EXPIRES_DAYS = 365
 SHARE_COLLECTION = "report_shares"
 PUBLIC_NOT_FOUND = "报告不存在或链接已失效"
+
+# 免登录导出：同一 token 每分钟最多下载次数
+DOWNLOAD_RATE_LIMIT_PER_MINUTE = 10
+# 公开 decision 白名单字段（reasoning 等内部长文不对外）
+PUBLIC_DECISION_FIELDS = ("action", "target_price", "confidence", "risk_score")
 
 
 class ReportNotFoundError(Exception):
@@ -113,6 +118,7 @@ def serialize_report_from_analysis_doc(doc: Dict[str, Any], report_id: str) -> D
         "key_points": doc.get("key_points", []),
         "execution_time": doc.get("execution_time", 0),
         "tokens_used": doc.get("tokens_used", 0),
+        "decision": doc.get("decision") or {},
     }
 
 
@@ -147,10 +153,23 @@ def serialize_report_from_task_doc(tasks_doc: Dict[str, Any], report_id: str) ->
         "key_points": result.get("key_points", []),
         "execution_time": result.get("execution_time", 0),
         "tokens_used": result.get("tokens_used", 0),
+        "decision": result.get("decision") or {},
     }
 
 
+def _public_decision(decision: Any) -> Dict[str, Any]:
+    """decision 仅保留白名单字段，缺失的键不输出。"""
+    if not isinstance(decision, dict):
+        return {}
+    return {key: decision[key] for key in PUBLIC_DECISION_FIELDS if decision.get(key) is not None}
+
+
 def serialize_public_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    """公开分享数据；不输出 model_info、tokens_used、user_id 等内部字段。
+
+    expires_at 由 get_public_report_by_token 按分享记录填入。
+    """
+    analysts = report.get("analysts") or []
     return {
         "stock_symbol": report.get("stock_symbol", ""),
         "stock_name": report.get("stock_name", ""),
@@ -161,6 +180,10 @@ def serialize_public_report(report: Dict[str, Any]) -> Dict[str, Any]:
         "confidence_score": report.get("confidence_score", 0.0),
         "summary": report.get("summary", ""),
         "key_points": report.get("key_points") or [],
+        "analysts": list(analysts) if isinstance(analysts, (list, tuple)) else [str(analysts)],
+        "research_depth": report.get("research_depth", 1),
+        "decision": _public_decision(report.get("decision")),
+        "expires_at": report.get("expires_at", ""),
         "reports": order_report_modules(report.get("reports") or {}),
     }
 
@@ -377,3 +400,40 @@ async def get_public_report_by_token(token: str, db=None) -> Tuple[Dict[str, Any
     public_report = serialize_public_report(report)
     public_report["expires_at"] = _to_iso(share.get("expires_at"))
     return public_report, _share_public_meta(share)
+
+
+def mask_token(token: str) -> str:
+    """日志中仅保留 token 前 3 位。"""
+    return f"{(token or '')[:3]}***"
+
+
+async def check_download_rate_limit(token: str, now: Optional[datetime] = None) -> bool:
+    """同一 token 每分钟最多 DOWNLOAD_RATE_LIMIT_PER_MINUTE 次导出。
+
+    返回 True 表示放行；Redis 不可用时放行（限流是保护措施，不应阻断正常导出）。
+    """
+    now = now or datetime.utcnow()
+    key = f"share:dl:{token}:{now.strftime('%Y%m%d%H%M')}"
+    try:
+        from app.core.redis_client import get_redis
+
+        redis = get_redis()
+        count = await redis.incr(key)
+        if count == 1:
+            await redis.expire(key, 120)
+        return int(count) <= DOWNLOAD_RATE_LIMIT_PER_MINUTE
+    except Exception as exc:
+        logger.warning("share_download_rate_limit_skipped token=%s err=%s", mask_token(token), exc)
+        return True
+
+
+async def record_share_download(token: str, db=None) -> None:
+    """导出成功后累加 download_count（失败不影响下载）。"""
+    db = db if db is not None else get_mongo_db()
+    try:
+        await db[SHARE_COLLECTION].update_one(
+            {"token": token},
+            {"$inc": {"download_count": 1}},
+        )
+    except Exception as exc:
+        logger.debug("分享下载计数更新失败: %s", exc)
