@@ -77,7 +77,9 @@ export function useShareReport() {
   }
 
   function toQuery(tab: string, role: string): Record<string, string> {
-    return role ? { tab, role } : { tab }
+    const query: Record<string, string> = role ? { tab, role } : { tab }
+    if (route.query.from === 'app') query.from = 'app'
+    return query
   }
 
   /** 切换到指定部门 / 岗位；回顶并同步地址栏 */

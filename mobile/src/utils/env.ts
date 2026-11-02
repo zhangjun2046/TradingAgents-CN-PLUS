@@ -14,7 +14,14 @@ export function getPublicAppUrl(): string {
   return base.replace(/\/+$/, "");
 }
 
-/** 拼装免登录分享页地址：{公开地址}/s/{token} */
+/** 拼装免登录分享页地址：{公开地址}/s/{token}。复制给他人时用这个，不带应用内标记。 */
 export function buildShareUrl(token: string): string {
   return `${getPublicAppUrl()}/s/${token}`;
+}
+
+/** 从 H5 里打开同一份报告时加上 from=app，分享页据此显示「返回报告列表」。 */
+export function buildInAppShareUrl(token: string): string {
+  const url = new URL(buildShareUrl(token));
+  url.searchParams.set("from", "app");
+  return url.toString();
 }

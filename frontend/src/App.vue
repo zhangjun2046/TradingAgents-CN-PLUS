@@ -32,7 +32,6 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import NetworkStatus from '@/components/NetworkStatus.vue'
 import PwaInstallPrompt from '@/components/PwaInstallPrompt.vue'
-import axios from 'axios'
 import { configApi } from '@/api/config'
 
 // 需要缓存的组件
@@ -61,9 +60,9 @@ const checkFirstTimeSetup = async () => {
     }
 
     // 验证配置完整性（管理员接口）
-    const response = await axios.get('/api/system/config/validate')
-    if (response.data.success) {
-      const result = response.data.data
+    const response = await configApi.validateSystem()
+    if (response.success) {
+      const result = response.data
 
       // 如果有缺少的必需配置，显示配置向导
       if (!result.success && result.missing_required?.length > 0) {

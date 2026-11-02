@@ -9,12 +9,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.deps import require_admin
+from app.routers.auth_db import get_current_user
 from app.services.multi_source_basics_sync_service import get_multi_source_sync_service
 from app.services.data_sources.manager import DataSourceManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sync/multi-source", tags=["Multi-Source Sync"], dependencies=[Depends(require_admin)])
+
+# 当前数据源是筛选页的只读展示，已登录用户即可查询。同步、清缓存等仍只允许管理员。
+current_source_router = APIRouter(
+    prefix="/api/sync/multi-source",
+    tags=["Multi-Source Sync"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 class SyncRequest(BaseModel):
@@ -86,7 +94,7 @@ async def get_data_sources_status():
         raise HTTPException(status_code=500, detail=f"Failed to get data sources status: {str(e)}")
 
 
-@router.get("/sources/current")
+@current_source_router.get("/sources/current")
 async def get_current_data_source():
     """获取当前正在使用的数据源（优先级最高且可用的）"""
     try:

@@ -164,6 +164,11 @@ export const configApi = {
     return ApiClient.get('/api/config/system')
   },
 
+  // 校验环境变量与数据库配置（管理员接口，会带上登录令牌）
+  validateSystem(): Promise<{ success: boolean; data: any; message?: string }> {
+    return ApiClient.get('/api/system/config/validate')
+  },
+
   // ========== 大模型厂家管理 ==========
 
   // 获取所有大模型厂家
