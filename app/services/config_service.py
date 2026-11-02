@@ -944,9 +944,14 @@ class ConfigService:
                 result["response_time"] = time.time() - start_time
                 return result
             elif provider_str == "dashscope":
-                # DashScope 使用专门的测试方法
+                # DashScope 使用模型自己的名称，地址用模型配置或厂家默认地址
                 logger.info(f"🔍 使用 DashScope 专用测试方法")
-                result = self._test_dashscope_api(api_key, f"{provider_str} {llm_config.model_name}", llm_config.model_name)
+                result = self._test_dashscope_api(
+                    api_key,
+                    f"{provider_str} {llm_config.model_name}",
+                    llm_config.model_name,
+                    api_base,
+                )
                 result["response_time"] = time.time() - start_time
                 return result
             else:
@@ -3331,7 +3336,19 @@ class ConfigService:
             elif provider_name == "deepseek":
                 return await asyncio.get_event_loop().run_in_executor(None, self._test_deepseek_api, api_key, display_name)
             elif provider_name == "dashscope":
-                return await asyncio.get_event_loop().run_in_executor(None, self._test_dashscope_api, api_key, display_name)
+                db = await self._get_db()
+                providers_collection = db.llm_providers
+                provider_data = await providers_collection.find_one({"name": provider_name})
+                base_url = provider_data.get("default_base_url") if provider_data else None
+                model_name = await self._get_provider_test_model(provider_name)
+                if not model_name:
+                    return {
+                        "success": False,
+                        "message": f"{display_name} 未配置可用模型，请先在大模型配置中添加该接入点上的模型后再测试"
+                    }
+                return await asyncio.get_event_loop().run_in_executor(
+                    None, self._test_dashscope_api, api_key, display_name, model_name, base_url
+                )
             elif provider_name == "openrouter":
                 return await asyncio.get_event_loop().run_in_executor(None, self._test_openrouter_api, api_key, display_name)
             elif provider_name == "openai":
@@ -3614,20 +3631,48 @@ class ConfigService:
                 "message": f"{display_name} API测试异常: {str(e)}"
             }
 
-    def _test_dashscope_api(self, api_key: str, display_name: str, model_name: str = None) -> dict:
-        """测试阿里云百炼API"""
+    async def _get_provider_test_model(self, provider_name: str) -> Optional[str]:
+        """选取厂家测试用的模型。优先已启用、且不是已下线的 qwen-turbo。"""
+        try:
+            config = await self.get_system_config()
+            if not config:
+                return None
+
+            names = []
+            for llm in config.llm_configs:
+                provider = llm.provider.value if hasattr(llm.provider, "value") else str(llm.provider)
+                if provider != provider_name or not llm.model_name:
+                    continue
+                if getattr(llm, "enabled", True) is False:
+                    continue
+                names.append(llm.model_name)
+
+            for name in names:
+                if name != "qwen-turbo":
+                    return name
+            return names[0] if names else None
+        except Exception as e:
+            logger.warning(f"⚠️ 读取 {provider_name} 测试模型失败: {e}")
+            return None
+
+    def _test_dashscope_api(self, api_key: str, display_name: str, model_name: str = None, base_url: str = None) -> dict:
+        """测试阿里云百炼 API。有厂家默认地址时用该地址，否则用公共兼容接口。"""
         try:
             import requests
 
-            # 如果没有指定模型，使用默认模型
             if not model_name:
-                model_name = "qwen-turbo"
-                logger.info(f"⚠️ 未指定模型，使用默认模型: {model_name}")
+                return {
+                    "success": False,
+                    "message": f"{display_name} 未指定测试模型"
+                }
 
-            logger.info(f"🔍 [DashScope 测试] 使用模型: {model_name}")
+            if base_url and str(base_url).strip():
+                root = str(base_url).strip().rstrip("/")
+                url = root if root.endswith("/chat/completions") else f"{root}/chat/completions"
+            else:
+                url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
-            # 使用阿里云百炼的OpenAI兼容接口
-            url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+            logger.info(f"🔍 [DashScope 测试] 模型: {model_name}，地址: {url}")
 
             headers = {
                 "Content-Type": "application/json",
@@ -3643,7 +3688,7 @@ class ConfigService:
                 "temperature": 0.1
             }
 
-            response = requests.post(url, json=data, headers=headers, timeout=10)
+            response = requests.post(url, json=data, headers=headers, timeout=20)
 
             if response.status_code == 200:
                 result = response.json()
@@ -3652,23 +3697,35 @@ class ConfigService:
                     if content and len(content.strip()) > 0:
                         return {
                             "success": True,
-                            "message": f"{display_name} API连接测试成功"
+                            "message": f"{display_name} API连接测试成功（模型 {model_name}）"
                         }
                     else:
                         return {
                             "success": False,
-                            "message": f"{display_name} API响应为空"
+                            "message": f"{display_name} API响应为空（模型 {model_name}）"
                         }
                 else:
                     return {
                         "success": False,
-                        "message": f"{display_name} API响应格式异常"
+                        "message": f"{display_name} API响应格式异常（模型 {model_name}）"
                     }
-            else:
-                return {
-                    "success": False,
-                    "message": f"{display_name} API测试失败: HTTP {response.status_code}"
-                }
+
+            detail = ""
+            try:
+                body = response.json()
+                err = body.get("error") if isinstance(body, dict) else None
+                if isinstance(err, dict):
+                    detail = err.get("message") or err.get("code") or ""
+                elif isinstance(body, dict):
+                    detail = body.get("message") or body.get("code") or ""
+            except Exception:
+                detail = (response.text or "")[:300]
+            detail = str(detail).strip()
+            suffix = f" {detail}" if detail else ""
+            return {
+                "success": False,
+                "message": f"{display_name} API测试失败: HTTP {response.status_code}{suffix}（模型 {model_name}）"
+            }
 
         except Exception as e:
             return {
