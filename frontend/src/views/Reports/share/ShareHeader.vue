@@ -1,7 +1,7 @@
 <template>
   <header class="share-header">
     <div class="top-row">
-      <a class="back-list" :href="reportListUrl" @click="onBackToList">返回报告列表</a>
+      <a v-if="openedFromApp" class="back-list" :href="reportListUrl" @click="onBackToList">返回报告列表</a>
       <slot name="actions" />
     </div>
     <p class="eyebrow">HunterAgent 分析报告</p>
@@ -16,7 +16,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { resolveReportListUrl, logBackToList } from './shareConfig'
+import { useRoute } from 'vue-router'
+import { resolveReportListUrl, logBackToList, isOpenedFromApp } from './shareConfig'
 import type { SharedReport } from './types'
 
 const props = defineProps<{ report: SharedReport }>()
@@ -25,6 +26,8 @@ const title = computed(
   () => `${props.report.stock_name || props.report.stock_symbol || ''} 分析报告`
 )
 
+const route = useRoute()
+const openedFromApp = computed(() => isOpenedFromApp(route.query.from))
 const reportListUrl = resolveReportListUrl()
 
 /** 分享有效期仅展示，不改后端行为 */

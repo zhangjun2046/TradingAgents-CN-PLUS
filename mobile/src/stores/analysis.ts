@@ -16,7 +16,7 @@ import {
   POLL_MAX_DURATION_MS,
   POLL_NOT_FOUND_RETRY_MS,
 } from "@/constants/analysis";
-import { buildShareUrl } from "@/utils/env";
+import { buildInAppShareUrl, buildShareUrl } from "@/utils/env";
 
 /** 进度状态机（tech_solution 4.1.4） */
 export type AnalysisPhase =
@@ -453,8 +453,10 @@ export const useAnalysisStore = defineStore("analysis", {
         uni.showToast({ title: this.shareError || "分享链接生成失败", icon: "none" });
         return;
       }
-      console.info("[Share] redirect", { url: this.shareUrl });
-      window.location.href = this.shareUrl;
+      const token = new URL(this.shareUrl).pathname.split("/").pop() || "";
+      const url = buildInAppShareUrl(token);
+      console.info("[Share] redirect", { url });
+      window.location.href = url;
     },
   },
 });

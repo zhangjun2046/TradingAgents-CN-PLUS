@@ -222,6 +222,11 @@ export function logBackToList(): void {
   console.info('[Share] back to report list', { url: resolveReportListUrl() })
 }
 
+/** 仅应用内打开（?from=app）时显示返回列表。复制出去的 /s/{token} 不带该参数。 */
+export function isOpenedFromApp(from: unknown): boolean {
+  return from === 'app'
+}
+
 /** 已取消的一级页签；旧链接改指向风控部主席 */
 const LEGACY_DECISION_TAB = 'decision'
 

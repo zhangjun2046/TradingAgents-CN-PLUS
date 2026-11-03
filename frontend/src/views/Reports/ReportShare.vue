@@ -6,10 +6,10 @@
     </div>
 
     <div v-else-if="error" class="share-status share-status--error">
-      <a class="back-list" :href="reportListUrl" @click="logBackToList">返回报告列表</a>
+      <a v-if="openedFromApp" class="back-list" :href="reportListUrl" @click="logBackToList">返回报告列表</a>
       <h1>链接已失效</h1>
       <p>{{ error }}</p>
-      <p class="hint">请返回报告列表重新打开</p>
+      <p v-if="openedFromApp" class="hint">请返回报告列表重新打开</p>
     </div>
 
     <article v-else-if="report" class="share-article">
@@ -75,10 +75,11 @@ import OverviewPanel from './share/OverviewPanel.vue'
 import RolePanel from './share/RolePanel.vue'
 import ShareHeader from './share/ShareHeader.vue'
 import { isWechatUserAgent } from './share/exportShare'
-import { OVERVIEW_DEPT_KEY, logBackToList, resolveReportListUrl } from './share/shareConfig'
+import { OVERVIEW_DEPT_KEY, isOpenedFromApp, logBackToList, resolveReportListUrl } from './share/shareConfig'
 import { useShareReport } from './share/useShareReport'
 
 const route = useRoute()
+const openedFromApp = computed(() => isOpenedFromApp(route.query.from))
 const reportListUrl = resolveReportListUrl()
 const exportOpen = ref(false)
 const wechatGuideShown = ref(false)

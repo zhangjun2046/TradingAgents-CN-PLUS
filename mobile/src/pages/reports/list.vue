@@ -122,7 +122,7 @@ import {
   type ReportListItem,
 } from "@/api/reports";
 import { useAuthStore } from "@/stores/auth";
-import { buildShareUrl } from "@/utils/env";
+import { buildInAppShareUrl } from "@/utils/env";
 
 const PAGE_SIZE = 20;
 
@@ -344,7 +344,7 @@ async function openReport(item: ReportListItem): Promise<void> {
   console.info("[Reports] open", { id });
   try {
     const share = await createOrReuseShare(id);
-    const url = buildShareUrl(share.token);
+    const url = buildInAppShareUrl(share.token);
     console.info("[Reports] redirect", { url });
     if (typeof window !== "undefined") {
       window.location.href = url;
