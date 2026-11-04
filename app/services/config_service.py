@@ -20,6 +20,90 @@ from app.models.config import (
 
 logger = logging.getLogger(__name__)
 
+# 厂家默认地址留空时，测试可用的公共地址。自定义厂家不在这里，不能猜地址。
+PUBLIC_PROVIDER_BASE_URLS = {
+    "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "openai": "https://api.openai.com/v1",
+    "deepseek": "https://api.deepseek.com",
+    "anthropic": "https://api.anthropic.com",
+    "qianfan": "https://qianfan.baidubce.com/v2",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "google": "https://generativelanguage.googleapis.com/v1beta",
+}
+
+_PUBLIC_TEST_NOTICE = "厂家默认地址未填写，分析不会使用这个公共地址，请先填写后再做分析。"
+
+
+def clean_provider_base_url(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().rstrip("/")
+
+
+def resolve_provider_test_base(provider_name: str, configured: Any) -> tuple[str, bool]:
+    """返回测试用的基础地址，以及是否改用了该平台的公共地址。"""
+    own = clean_provider_base_url(configured)
+    if own:
+        return own, False
+    public = PUBLIC_PROVIDER_BASE_URLS.get(provider_name or "")
+    if public:
+        return public, True
+    return "", False
+
+
+def chat_completions_url(base_url: str) -> str:
+    root = clean_provider_base_url(base_url)
+    if root.endswith("/chat/completions"):
+        return root
+    return f"{root}/chat/completions"
+
+
+def openai_compatible_chat_url(base_url: str) -> str:
+    """自定义厂家和聚合渠道：末尾没有版本号时补 /v1，再接对话接口。"""
+    import re
+
+    root = clean_provider_base_url(base_url)
+    if root.endswith("/chat/completions"):
+        return root
+    if not re.search(r"/v\d+$", root):
+        root = root + "/v1"
+    return root + "/chat/completions"
+
+
+def anthropic_messages_url(base_url: str) -> str:
+    root = clean_provider_base_url(base_url)
+    if root.endswith("/messages"):
+        return root
+    if root.endswith("/v1"):
+        return root + "/messages"
+    return root + "/v1/messages"
+
+
+def normalize_google_base(base_url: Any) -> str:
+    base = clean_provider_base_url(base_url) or PUBLIC_PROVIDER_BASE_URLS["google"]
+    if base.endswith("/v1"):
+        return base[:-3] + "/v1beta"
+    return base
+
+
+def google_generate_content_url(base_url: Any, model_name: str) -> str:
+    return f"{normalize_google_base(base_url)}/models/{model_name}:generateContent"
+
+
+def missing_provider_url_message(display_name: str) -> str:
+    return f"{display_name} 未配置 API 基础 URL，请先填写厂家默认地址后再测试"
+
+
+def append_provider_test_address(result: Dict[str, Any], request_url: str, used_public: bool) -> Dict[str, Any]:
+    """成功和失败都带上实际请求地址。改打公共地址时说明分析不会使用它。"""
+    message = result.get("message") or ""
+    suffix = f"（请求地址：{request_url}）"
+    if used_public:
+        suffix += _PUBLIC_TEST_NOTICE
+    updated = dict(result)
+    updated["message"] = f"{message}{suffix}"
+    return updated
+
 
 class ConfigService:
     """配置管理服务类"""
@@ -3311,70 +3395,79 @@ class ConfigService:
                 "message": f"测试失败: {str(e)}"
             }
 
+    async def _load_provider_by_name(self, provider_name: str) -> Optional[dict]:
+        db = await self._get_db()
+        return await db.llm_providers.find_one({"name": provider_name})
+
     async def _test_provider_connection(self, provider_name: str, api_key: str, display_name: str) -> dict:
-        """测试具体厂家的连接"""
+        """测试厂家密钥。填了默认地址就打该地址；没填时内置平台改打各自的公共地址，并在结果里写明。"""
         import asyncio
 
         try:
-            # 聚合渠道（使用 OpenAI 兼容 API）
+            provider_data = await self._load_provider_by_name(provider_name)
+            configured = provider_data.get("default_base_url") if provider_data else None
+            base_url, used_public = resolve_provider_test_base(provider_name, configured)
+            if not base_url:
+                return {
+                    "success": False,
+                    "message": missing_provider_url_message(display_name),
+                }
+
+            loop = asyncio.get_event_loop()
             if provider_name in ["302ai", "oneapi", "newapi", "custom_aggregator"]:
-                # 获取厂家的 base_url
-                db = await self._get_db()
-                providers_collection = db.llm_providers
-                provider_data = await providers_collection.find_one({"name": provider_name})
-                base_url = provider_data.get("default_base_url") if provider_data else None
-                return await asyncio.get_event_loop().run_in_executor(
+                request_url = openai_compatible_chat_url(base_url)
+                result = await loop.run_in_executor(
                     None, self._test_openai_compatible_api, api_key, display_name, base_url, provider_name
                 )
             elif provider_name == "google":
-                # 获取厂家的 base_url
-                db = await self._get_db()
-                providers_collection = db.llm_providers
-                provider_data = await providers_collection.find_one({"name": provider_name})
-                base_url = provider_data.get("default_base_url") if provider_data else None
-                return await asyncio.get_event_loop().run_in_executor(None, self._test_google_api, api_key, display_name, base_url)
+                model_name = "gemini-2.0-flash-exp"
+                request_url = google_generate_content_url(base_url, model_name)
+                result = await loop.run_in_executor(
+                    None, self._test_google_api, api_key, display_name, base_url, model_name
+                )
             elif provider_name == "deepseek":
-                return await asyncio.get_event_loop().run_in_executor(None, self._test_deepseek_api, api_key, display_name)
+                request_url = chat_completions_url(base_url)
+                result = await loop.run_in_executor(
+                    None, self._test_deepseek_api, api_key, display_name, None, base_url
+                )
             elif provider_name == "dashscope":
-                db = await self._get_db()
-                providers_collection = db.llm_providers
-                provider_data = await providers_collection.find_one({"name": provider_name})
-                base_url = provider_data.get("default_base_url") if provider_data else None
                 model_name = await self._get_provider_test_model(provider_name)
                 if not model_name:
                     return {
                         "success": False,
                         "message": f"{display_name} 未配置可用模型，请先在大模型配置中添加该接入点上的模型后再测试"
                     }
-                return await asyncio.get_event_loop().run_in_executor(
+                request_url = chat_completions_url(base_url)
+                result = await loop.run_in_executor(
                     None, self._test_dashscope_api, api_key, display_name, model_name, base_url
                 )
             elif provider_name == "openrouter":
-                return await asyncio.get_event_loop().run_in_executor(None, self._test_openrouter_api, api_key, display_name)
+                request_url = chat_completions_url(base_url)
+                result = await loop.run_in_executor(
+                    None, self._test_openrouter_api, api_key, display_name, base_url
+                )
             elif provider_name == "openai":
-                return await asyncio.get_event_loop().run_in_executor(None, self._test_openai_api, api_key, display_name)
+                request_url = chat_completions_url(base_url)
+                result = await loop.run_in_executor(
+                    None, self._test_openai_api, api_key, display_name, base_url
+                )
             elif provider_name == "anthropic":
-                return await asyncio.get_event_loop().run_in_executor(None, self._test_anthropic_api, api_key, display_name)
+                request_url = anthropic_messages_url(base_url)
+                result = await loop.run_in_executor(
+                    None, self._test_anthropic_api, api_key, display_name, base_url
+                )
             elif provider_name == "qianfan":
-                return await asyncio.get_event_loop().run_in_executor(None, self._test_qianfan_api, api_key, display_name)
+                request_url = chat_completions_url(base_url)
+                result = await loop.run_in_executor(
+                    None, self._test_qianfan_api, api_key, display_name, base_url
+                )
             else:
-                # 🔧 对于未知的自定义厂家，使用 OpenAI 兼容 API 测试
                 logger.info(f"🔍 使用 OpenAI 兼容 API 测试自定义厂家: {provider_name}")
-                # 获取厂家的 base_url
-                db = await self._get_db()
-                providers_collection = db.llm_providers
-                provider_data = await providers_collection.find_one({"name": provider_name})
-                base_url = provider_data.get("default_base_url") if provider_data else None
-
-                if not base_url:
-                    return {
-                        "success": False,
-                        "message": f"自定义厂家 {display_name} 未配置 API 基础 URL"
-                    }
-
-                return await asyncio.get_event_loop().run_in_executor(
+                request_url = openai_compatible_chat_url(base_url)
+                result = await loop.run_in_executor(
                     None, self._test_openai_compatible_api, api_key, display_name, base_url, provider_name
                 )
+            return append_provider_test_address(result, request_url, used_public)
         except Exception as e:
             return {
                 "success": False,
@@ -3397,22 +3490,9 @@ class ConfigService:
             logger.info(f"   base_url (原始): {base_url}")
             logger.info(f"   api_key 长度: {len(api_key) if api_key else 0}")
 
-            # 使用配置的 base_url 或默认值
-            if not base_url:
-                base_url = "https://generativelanguage.googleapis.com/v1beta"
-                logger.info(f"   ⚠️ base_url 为空，使用默认值: {base_url}")
-
-            # 移除末尾的斜杠
-            base_url = base_url.rstrip('/')
-            logger.info(f"   base_url (去除斜杠): {base_url}")
-
-            # 如果 base_url 以 /v1 结尾，替换为 /v1beta（Google AI 的正确端点）
-            if base_url.endswith('/v1'):
-                base_url = base_url[:-3] + '/v1beta'
-                logger.info(f"   ✅ 将 /v1 替换为 /v1beta: {base_url}")
-
-            # 构建完整的 API 端点（使用用户配置的模型）
-            url = f"{base_url}/models/{model_name}:generateContent?key={api_key}"
+            endpoint = google_generate_content_url(base_url, model_name)
+            logger.info(f"   base_url (规范化): {normalize_google_base(base_url)}")
+            url = f"{endpoint}?key={api_key}"
 
             logger.info(f"🔗 [Google AI 测试] 最终请求 URL: {url.replace(api_key, '***')}")
 
@@ -3560,7 +3640,7 @@ class ConfigService:
                 "message": f"{display_name} API测试异常: {str(e)}"
             }
 
-    def _test_deepseek_api(self, api_key: str, display_name: str, model_name: str = None) -> dict:
+    def _test_deepseek_api(self, api_key: str, display_name: str, model_name: str = None, base_url: str = None) -> dict:
         """测试DeepSeek API"""
         try:
             import requests
@@ -3572,7 +3652,7 @@ class ConfigService:
 
             logger.info(f"🔍 [DeepSeek 测试] 使用模型: {model_name}")
 
-            url = "https://api.deepseek.com/chat/completions"
+            url = chat_completions_url(base_url or PUBLIC_PROVIDER_BASE_URLS["deepseek"])
 
             headers = {
                 "Content-Type": "application/json",
@@ -3666,11 +3746,7 @@ class ConfigService:
                     "message": f"{display_name} 未指定测试模型"
                 }
 
-            if base_url and str(base_url).strip():
-                root = str(base_url).strip().rstrip("/")
-                url = root if root.endswith("/chat/completions") else f"{root}/chat/completions"
-            else:
-                url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+            url = chat_completions_url(base_url or PUBLIC_PROVIDER_BASE_URLS["dashscope"])
 
             logger.info(f"🔍 [DashScope 测试] 模型: {model_name}，地址: {url}")
 
@@ -3733,12 +3809,12 @@ class ConfigService:
                 "message": f"{display_name} API测试异常: {str(e)}"
             }
 
-    def _test_openrouter_api(self, api_key: str, display_name: str) -> dict:
+    def _test_openrouter_api(self, api_key: str, display_name: str, base_url: str = None) -> dict:
         """测试OpenRouter API"""
         try:
             import requests
 
-            url = "https://openrouter.ai/api/v1/chat/completions"
+            url = chat_completions_url(base_url or PUBLIC_PROVIDER_BASE_URLS["openrouter"])
 
             headers = {
                 "Content-Type": "application/json",
@@ -3789,12 +3865,12 @@ class ConfigService:
                 "message": f"{display_name} API测试异常: {str(e)}"
             }
 
-    def _test_openai_api(self, api_key: str, display_name: str) -> dict:
+    def _test_openai_api(self, api_key: str, display_name: str, base_url: str = None) -> dict:
         """测试OpenAI API"""
         try:
             import requests
 
-            url = "https://api.openai.com/v1/chat/completions"
+            url = chat_completions_url(base_url or PUBLIC_PROVIDER_BASE_URLS["openai"])
 
             headers = {
                 "Content-Type": "application/json",
@@ -3843,12 +3919,12 @@ class ConfigService:
                 "message": f"{display_name} API测试异常: {str(e)}"
             }
 
-    def _test_anthropic_api(self, api_key: str, display_name: str) -> dict:
+    def _test_anthropic_api(self, api_key: str, display_name: str, base_url: str = None) -> dict:
         """测试Anthropic API"""
         try:
             import requests
 
-            url = "https://api.anthropic.com/v1/messages"
+            url = anthropic_messages_url(base_url or PUBLIC_PROVIDER_BASE_URLS["anthropic"])
 
             headers = {
                 "Content-Type": "application/json",
@@ -3897,13 +3973,12 @@ class ConfigService:
                 "message": f"{display_name} API测试异常: {str(e)}"
             }
 
-    def _test_qianfan_api(self, api_key: str, display_name: str) -> dict:
+    def _test_qianfan_api(self, api_key: str, display_name: str, base_url: str = None) -> dict:
         """测试百度千帆API"""
         try:
             import requests
 
-            # 千帆新一代API使用OpenAI兼容接口
-            url = "https://qianfan.baidubce.com/v2/chat/completions"
+            url = chat_completions_url(base_url or PUBLIC_PROVIDER_BASE_URLS["qianfan"])
 
             headers = {
                 "Content-Type": "application/json",
@@ -4309,22 +4384,7 @@ class ConfigService:
                     "message": f"{display_name} 未配置 API 基础地址 (default_base_url)"
                 }
 
-            # 🔧 智能版本号处理：只有在没有版本号的情况下才添加 /v1
-            # 避免对已有版本号的URL（如智谱AI的 /v4）重复添加 /v1
-            import re
-            logger.info(f"   [测试API] 原始 base_url: {base_url}")
-            base_url = base_url.rstrip("/")
-            logger.info(f"   [测试API] 去除斜杠后: {base_url}")
-
-            if not re.search(r'/v\d+$', base_url):
-                # URL末尾没有版本号，添加 /v1（OpenAI标准）
-                base_url = base_url + "/v1"
-                logger.info(f"   [测试API] 添加 /v1 版本号: {base_url}")
-            else:
-                # URL已包含版本号（如 /v4），不添加
-                logger.info(f"   [测试API] 检测到已有版本号，保持原样: {base_url}")
-
-            url = f"{base_url}/chat/completions"
+            url = openai_compatible_chat_url(base_url)
             logger.info(f"   [测试API] 最终请求URL: {url}")
 
             headers = {
