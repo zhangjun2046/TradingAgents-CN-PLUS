@@ -477,7 +477,8 @@ export const configApi = {
 
   // 测试配置连接
   testConfig(testRequest: ConfigTestRequest): Promise<ConfigTestResponse> {
-    return ApiClient.post('/api/config/test', testRequest)
+    // 失败文案由配置页自己提示，避免拦截器再弹一次相同消息
+    return ApiClient.post('/api/config/test', testRequest, { skipErrorHandler: true })
   },
 
   // 导出配置
