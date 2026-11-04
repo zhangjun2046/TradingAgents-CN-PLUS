@@ -107,6 +107,7 @@
             variant="deep"
           />
         </view>
+        <text v-if="modelNotice" class="model-notice">{{ modelNotice }}</text>
       </view>
     </view>
 
@@ -116,7 +117,7 @@
       <button
         class="submit-btn"
         :loading="submitting"
-        :disabled="submitting"
+        :disabled="submitting || modelsBlocked"
         @click="onSubmit"
       >
         {{ submitting ? "提交中..." : "↗ 开始智能分析" }}
@@ -265,6 +266,8 @@ const submitting = ref(false);
 const submitTried = ref(false);
 const stockName = ref("");
 const models = ref<PublicModelsData | null>(null);
+const modelNotice = ref("");
+const modelsBlocked = ref(false);
 
 // ---------- 市场 ----------
 const marketLabels = MARKETS.map(
@@ -312,20 +315,8 @@ function onDateChange(value: string) {
 }
 
 // ---------- 模型 ----------
-function filterByRole(list: PublicModel[], role: string): PublicModel[] {
-  const matched = list.filter(
-    (m) => m.roles.includes(role) || m.roles.includes("both")
-  );
-  // 角色标注缺失时不让下拉为空
-  return matched.length > 0 ? matched : list;
-}
-
-const quickOptions = computed(() =>
-  models.value ? filterByRole(models.value.models, "quick_analysis") : []
-);
-const deepOptions = computed(() =>
-  models.value ? filterByRole(models.value.models, "deep_analysis") : []
-);
+const quickOptions = computed(() => models.value?.quick_models ?? []);
+const deepOptions = computed(() => models.value?.deep_models ?? []);
 
 /** 保留用户已选且仍有效的模型；否则取默认模型，再否则取列表第一项 */
 function pickModel(
@@ -340,17 +331,28 @@ function pickModel(
 }
 
 async function loadModels() {
-  const { data, fromFallback } = await getPublicModels();
+  const { data, fromFallback, loadError, empty } = await getPublicModels();
+  if (loadError || empty || !data) {
+    models.value = data;
+    form.quickModel = "";
+    form.deepModel = "";
+    modelsBlocked.value = auth.isLoggedIn;
+    modelNotice.value = loadError ? "模型列表加载失败" : "暂无可用模型，请联系管理员";
+    console.info("[Analysis] models unavailable", { loadError, empty });
+    return;
+  }
   models.value = data;
+  modelsBlocked.value = false;
+  modelNotice.value = "";
   form.quickModel = pickModel(
     form.quickModel,
     data.default_quick_model,
-    quickOptions.value
+    data.quick_models
   );
   form.deepModel = pickModel(
     form.deepModel,
     data.default_deep_model,
-    deepOptions.value
+    data.deep_models
   );
   console.info("[Analysis] models ready", {
     fromFallback,
@@ -393,6 +395,10 @@ function validateForm(): boolean {
   }
   if (isFutureDate(form.analysisDate)) {
     uni.showToast({ title: "不能选择未来日期", icon: "none" });
+    return false;
+  }
+  if (modelsBlocked.value || !form.quickModel || !form.deepModel) {
+    uni.showToast({ title: modelNotice.value || "请选择分析模型", icon: "none" });
     return false;
   }
   return true;
@@ -555,6 +561,14 @@ onShow(() => {
 <style lang="scss" scoped>
 .single-page {
   padding-top: 24rpx;
+}
+
+.model-notice {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: #e6a23c;
+  line-height: 1.5;
 }
 
 .intro-card {

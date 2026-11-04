@@ -177,12 +177,21 @@ async def recommend_models(request: ModelRecommendationRequest):
     根据分析深度推荐最合适的模型对。
     """
     try:
-        capability_service = get_model_capability_service()
+        from app.services.available_models import ModelCatalogError, load_model_catalog
 
-        # 获取推荐模型
-        quick_model, deep_model = capability_service.recommend_models_for_depth(
-            request.research_depth
+        capability_service = get_model_capability_service()
+        try:
+            catalog = await load_model_catalog()
+        except ModelCatalogError as exc:
+            raise HTTPException(status_code=503, detail="模型列表加载失败") from exc
+
+        recommended = capability_service.recommend_from_configs(
+            catalog.configs,
+            request.research_depth,
         )
+        if not recommended:
+            return ok(None, "暂无推荐模型")
+        quick_model, deep_model = recommended
 
         logger.info(f"🔍 推荐模型: quick={quick_model}, deep={deep_model}")
 

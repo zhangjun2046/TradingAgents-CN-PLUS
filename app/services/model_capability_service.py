@@ -309,88 +309,112 @@ class ModelCapabilityService:
 
         return result
     
-    def recommend_models_for_depth(
+    def recommend_from_configs(
         self,
-        research_depth: str
-    ) -> Tuple[str, str]:
-        """
-        根据分析深度推荐合适的模型对
-        
-        Args:
-            research_depth: 研究深度（快速/基础/标准/深度/全面）
-            
-        Returns:
-            (quick_model, deep_model) 元组
+        configs: List[Any],
+        research_depth: str,
+    ) -> Optional[Tuple[str, str]]:
+        """从已经筛过的可用模型里推荐。没有候选时返回 None，不退回写死模型。
+
+        角色只取快速/深度候选，不使用「筛空后退回全部可用模型」。
         """
         requirements = ANALYSIS_DEPTH_REQUIREMENTS.get(research_depth, ANALYSIS_DEPTH_REQUIREMENTS["标准"])
-        
-        # 获取所有启用的模型
-        try:
-            llm_configs = unified_config.get_llm_configs()
-            enabled_models = [c for c in llm_configs if c.enabled]
-        except Exception as e:
-            logger.error(f"获取模型配置失败: {e}")
-            # 使用默认模型
-            return self._get_default_models()
-        
-        if not enabled_models:
-            logger.warning("没有启用的模型，使用默认配置")
-            return self._get_default_models()
-        
-        # 筛选适合快速分析的模型
+
+        def role_values(config: Any) -> List[str]:
+            raw = getattr(config, "suitable_roles", None)
+            if raw is None and isinstance(config, dict):
+                raw = config.get("suitable_roles")
+            if not raw:
+                return [ModelRole.BOTH.value]
+            values = []
+            for item in raw:
+                text = item.value if hasattr(item, "value") else str(item)
+                if text:
+                    values.append(text)
+            return values or [ModelRole.BOTH.value]
+
+        def feature_values(config: Any) -> List[str]:
+            raw = getattr(config, "features", None)
+            if raw is None and isinstance(config, dict):
+                raw = config.get("features") or []
+            values = []
+            for item in raw or []:
+                text = item.value if hasattr(item, "value") else str(item)
+                if text:
+                    values.append(text)
+            return values
+
+        def level_of(config: Any) -> int:
+            level = getattr(config, "capability_level", None)
+            if level is None and isinstance(config, dict):
+                level = config.get("capability_level", 2)
+            return level if level is not None else 2
+
+        def name_of(config: Any) -> Optional[str]:
+            name = getattr(config, "model_name", None)
+            if name is None and isinstance(config, dict):
+                name = config.get("model_name") or config.get("name")
+            return name
+
+        def metrics_of(config: Any) -> Dict[str, Any]:
+            metrics = getattr(config, "performance_metrics", None)
+            if metrics is None and isinstance(config, dict):
+                metrics = config.get("performance_metrics")
+            return metrics if isinstance(metrics, dict) else {}
+
         quick_candidates = []
-        for m in enabled_models:
-            roles = getattr(m, 'suitable_roles', [ModelRole.BOTH])
-            level = getattr(m, 'capability_level', 2)
-            features = getattr(m, 'features', [])
-            
-            if (ModelRole.QUICK_ANALYSIS in roles or ModelRole.BOTH in roles) and \
-               level >= requirements["quick_model_min"] and \
-               ModelFeature.TOOL_CALLING in features:
-                quick_candidates.append(m)
-        
-        # 筛选适合深度分析的模型
         deep_candidates = []
-        for m in enabled_models:
-            roles = getattr(m, 'suitable_roles', [ModelRole.BOTH])
-            level = getattr(m, 'capability_level', 2)
-            
-            if (ModelRole.DEEP_ANALYSIS in roles or ModelRole.BOTH in roles) and \
-               level >= requirements["deep_model_min"]:
-                deep_candidates.append(m)
-        
-        # 按性价比排序（能力等级 vs 成本）
+        for config in configs or []:
+            roles = role_values(config)
+            level = level_of(config)
+            features = feature_values(config)
+            if (
+                (ModelRole.QUICK_ANALYSIS.value in roles or ModelRole.BOTH.value in roles)
+                and level >= requirements["quick_model_min"]
+                and ModelFeature.TOOL_CALLING.value in features
+            ):
+                quick_candidates.append(config)
+            if (
+                (ModelRole.DEEP_ANALYSIS.value in roles or ModelRole.BOTH.value in roles)
+                and level >= requirements["deep_model_min"]
+            ):
+                deep_candidates.append(config)
+
         quick_candidates.sort(
-            key=lambda x: (
-                getattr(x, 'capability_level', 2),
-                -getattr(x, 'performance_metrics', {}).get("cost", 3) if getattr(x, 'performance_metrics', None) else 0
-            ),
-            reverse=True
+            key=lambda item: (level_of(item), -metrics_of(item).get("cost", 3)),
+            reverse=True,
         )
-        
         deep_candidates.sort(
-            key=lambda x: (
-                getattr(x, 'capability_level', 2),
-                getattr(x, 'performance_metrics', {}).get("quality", 3) if getattr(x, 'performance_metrics', None) else 0
-            ),
-            reverse=True
+            key=lambda item: (level_of(item), metrics_of(item).get("quality", 3)),
+            reverse=True,
         )
-        
-        # 选择最佳模型
-        quick_model = quick_candidates[0].model_name if quick_candidates else None
-        deep_model = deep_candidates[0].model_name if deep_candidates else None
-        
-        # 如果没找到合适的，使用系统默认
+
+        quick_model = name_of(quick_candidates[0]) if quick_candidates else None
+        deep_model = name_of(deep_candidates[0]) if deep_candidates else None
         if not quick_model or not deep_model:
-            return self._get_default_models()
-        
+            logger.info(f"🤖 {research_depth} 分析没有同时满足两侧条件的推荐模型")
+            return None
+
         logger.info(
             f"🤖 为 {research_depth} 分析推荐模型: "
             f"quick={quick_model} (角色:快速分析), "
             f"deep={deep_model} (角色:深度推理)"
         )
-        
         return quick_model, deep_model
+
+    def recommend_models_for_depth(
+        self,
+        research_depth: str,
+    ) -> Optional[Tuple[str, str]]:
+        """从数据库可用名单推荐。没有候选时返回 None。"""
+        from app.services.available_models import ModelCatalogError, load_model_catalog_sync
+
+        try:
+            catalog = load_model_catalog_sync()
+        except ModelCatalogError as exc:
+            logger.error(f"获取可用模型失败: {exc}")
+            return None
+        return self.recommend_from_configs(catalog.configs, research_depth)
     
     def _get_default_models(self) -> Tuple[str, str]:
         """获取默认模型对"""

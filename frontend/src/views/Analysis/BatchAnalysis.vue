@@ -177,13 +177,16 @@
                     size="large"
                     @click="submitBatchAnalysis"
                     :loading="submitting"
-                    :disabled="stockCodes.length === 0"
+                    :disabled="stockCodes.length === 0 || !canSubmitModels"
                     class="submit-btn large-batch-btn"
                     style="width: 320px; height: 56px; font-size: 18px; font-weight: 700; border-radius: 16px;"
                   >
                     <el-icon><TrendCharts /></el-icon>
                     开始批量分析 ({{ stockCodes.length }}只)
                   </el-button>
+                  <div v-if="submitBlockReason" style="margin-top: 8px; color: #e6a23c; font-size: 13px;">
+                    {{ submitBlockReason }}
+                  </div>
                 </div>
               </div>
             </el-form>
@@ -204,7 +207,8 @@
               <ModelConfig
                 v-model:quick-analysis-model="modelSettings.quickAnalysisModel"
                 v-model:deep-analysis-model="modelSettings.deepAnalysisModel"
-                :available-models="availableModels"
+                :quick-models="quickModels"
+                :deep-models="deepModels"
                 :analysis-depth="batchForm.depth"
               />
 
@@ -290,7 +294,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Files, TrendCharts, Check, Close } from '@element-plus/icons-vue'
 import { ANALYSTS, DEFAULT_ANALYSTS, convertAnalystNamesToIds } from '@/constants/analysts'
@@ -313,12 +317,39 @@ const invalidCodes = ref<string[]>([])
 
 // 模型设置
 const modelSettings = ref({
-  quickAnalysisModel: 'qwen-turbo',
-  deepAnalysisModel: 'qwen-max'
+  quickAnalysisModel: '',
+  deepAnalysisModel: ''
 })
 
-// 可用的模型列表（从配置中获取）
-const availableModels = ref<any[]>([])
+const quickModels = ref<any[]>([])
+const deepModels = ref<any[]>([])
+const modelListMessage = ref('')
+const modelsLoaded = ref(false)
+
+const mapPublicModel = (model: { provider: string; name: string; display_name: string; capability_level?: number; roles?: string[] }) => ({
+  provider: model.provider,
+  model_name: model.name,
+  model_display_name: model.display_name,
+  enabled: true,
+  capability_level: model.capability_level,
+  suitable_roles: model.roles
+})
+
+const listedModel = (name: string | null | undefined, models: { model_name: string }[]) => {
+  if (!name) return ''
+  return models.some((item) => item.model_name === name) ? name : ''
+}
+
+const submitBlockReason = computed(() => {
+  if (!modelsLoaded.value) return ''
+  if (modelListMessage.value) return modelListMessage.value
+  if (!modelSettings.value.quickAnalysisModel || !modelSettings.value.deepAnalysisModel) {
+    return '请选择快速分析模型和深度决策模型'
+  }
+  return ''
+})
+
+const canSubmitModels = computed(() => modelsLoaded.value && !submitBlockReason.value)
 
 const batchForm = reactive({
   title: '',
@@ -373,27 +404,20 @@ const clearStocks = () => {
 const initializeModelSettings = async () => {
   try {
     const pub = await configApi.getPublicModels()
-    modelSettings.value.quickAnalysisModel = pub.default_quick_model || 'qwen-turbo'
-    modelSettings.value.deepAnalysisModel = pub.default_deep_model || 'qwen-max'
-    availableModels.value = (pub.models || []).map((m) => ({
-      provider: m.provider,
-      model_name: m.name,
-      model_display_name: m.display_name,
-      enabled: true,
-      capability_level: m.capability_level,
-      suitable_roles: m.roles
-    }))
-
-    console.log('✅ 加载模型配置成功:', {
-      quick: modelSettings.value.quickAnalysisModel,
-      deep: modelSettings.value.deepAnalysisModel,
-      available: availableModels.value.length
-    })
+    quickModels.value = (pub.quick_models || []).map(mapPublicModel)
+    deepModels.value = (pub.deep_models || []).map(mapPublicModel)
+    modelSettings.value.quickAnalysisModel = listedModel(pub.default_quick_model, quickModels.value)
+    modelSettings.value.deepAnalysisModel = listedModel(pub.default_deep_model, deepModels.value)
+    modelListMessage.value = pub.models.length === 0 ? '暂无可用模型，请联系管理员' : ''
   } catch (error) {
     console.error('加载默认模型配置失败:', error)
-    // 使用硬编码的默认值
-    modelSettings.value.quickAnalysisModel = 'qwen-turbo'
-    modelSettings.value.deepAnalysisModel = 'qwen-max'
+    quickModels.value = []
+    deepModels.value = []
+    modelSettings.value.quickAnalysisModel = ''
+    modelSettings.value.deepAnalysisModel = ''
+    modelListMessage.value = '模型列表加载失败，请刷新页面重试'
+  } finally {
+    modelsLoaded.value = true
   }
 }
 
