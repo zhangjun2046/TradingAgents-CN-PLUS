@@ -19,12 +19,30 @@ export interface PublicModelsData {
   default_quick_model: string | null;
   default_deep_model: string | null;
   models: PublicModel[];
+  quick_models: PublicModel[];
+  deep_models: PublicModel[];
 }
 
-export const FALLBACK_PUBLIC_MODELS: PublicModelsData = {
-  default_quick_model: "qwen-plus",
-  default_deep_model: "deepseek-chat",
-  models: [
+/** 与后端 split_models_by_role 相同，只用于未登录时的内置列表。 */
+export function splitModelsByRole(models: PublicModel[]): {
+  quick_models: PublicModel[];
+  deep_models: PublicModel[];
+} {
+  const rolesOf = (model: PublicModel) =>
+    model.roles && model.roles.length > 0 ? model.roles : ["both"];
+  const quick = models.filter(
+    (model) => rolesOf(model).includes("quick_analysis") || rolesOf(model).includes("both")
+  );
+  const deep = models.filter(
+    (model) => rolesOf(model).includes("deep_analysis") || rolesOf(model).includes("both")
+  );
+  return {
+    quick_models: quick.length > 0 ? quick : models,
+    deep_models: deep.length > 0 ? deep : models,
+  };
+}
+
+const FALLBACK_MODEL_LIST: PublicModel[] = [
     {
       name: "qwen-turbo",
       display_name: "通义千问 Turbo (qwen-turbo)",
@@ -53,5 +71,14 @@ export const FALLBACK_PUBLIC_MODELS: PublicModelsData = {
       capability_level: 4,
       roles: ["both"],
     },
-  ],
+];
+
+const fallbackSides = splitModelsByRole(FALLBACK_MODEL_LIST);
+
+export const FALLBACK_PUBLIC_MODELS: PublicModelsData = {
+  default_quick_model: "qwen-plus",
+  default_deep_model: "deepseek-chat",
+  models: FALLBACK_MODEL_LIST,
+  quick_models: fallbackSides.quick_models,
+  deep_models: fallbackSides.deep_models,
 };

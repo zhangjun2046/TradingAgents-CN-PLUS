@@ -13,7 +13,7 @@
           </div>
           <el-select v-model="localQuickModel" size="small" style="width: 100%" filterable @change="onQuickModelChange">
             <el-option
-              v-for="model in availableModels"
+              v-for="model in quickModels"
               :key="`quick-${model.provider}/${model.model_name}`"
               :label="model.model_display_name || model.model_name"
               :value="model.model_name"
@@ -55,7 +55,7 @@
           </div>
           <el-select v-model="localDeepModel" size="small" style="width: 100%" filterable @change="onDeepModelChange">
             <el-option
-              v-for="model in availableModels"
+              v-for="model in deepModels"
               :key="`deep-${model.provider}/${model.model_name}`"
               :label="model.model_display_name || model.model_name"
               :value="model.model_name"
@@ -102,8 +102,8 @@
             <div style="font-size: 13px; line-height: 1.8; flex: 1; white-space: pre-line;">
               {{ modelRecommendation.message }}
             </div>
-            <el-button
-              v-if="modelRecommendation.quickModel && modelRecommendation.deepModel"
+              <el-button
+              v-if="canApplyRecommendation"
               type="primary"
               size="small"
               @click="applyRecommendedModels"
@@ -119,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { recommendModels } from '@/api/modelCapabilities'
@@ -128,7 +128,8 @@ import { recommendModels } from '@/api/modelCapabilities'
 interface Props {
   quickAnalysisModel: string
   deepAnalysisModel: string
-  availableModels: any[]
+  quickModels: any[]
+  deepModels: any[]
   analysisDepth: string | number  // 支持字符串（如"标准"）或数字（如3）
 }
 
@@ -240,8 +241,8 @@ const checkModelSuitability = async () => {
       const deepModel = responseData.deep_model || '未知'
 
       // 获取模型的显示名称
-      const quickModelInfo = props.availableModels.find(m => m.model_name === quickModel)
-      const deepModelInfo = props.availableModels.find(m => m.model_name === deepModel)
+      const quickModelInfo = props.quickModels.find(m => m.model_name === quickModel)
+      const deepModelInfo = props.deepModels.find(m => m.model_name === deepModel)
 
       const quickDisplayName = quickModelInfo?.model_display_name || quickModel
       const deepDisplayName = deepModelInfo?.model_display_name || deepModel
@@ -291,19 +292,26 @@ const checkModelSuitability = async () => {
 /**
  * 应用推荐的模型配置
  */
+const modelInList = (name: string | undefined, models: any[]) =>
+  !!name && models.some((item) => item.model_name === name)
+
+const canApplyRecommendation = computed(() => {
+  const recommendation = modelRecommendation.value
+  return modelInList(recommendation?.quickModel, props.quickModels)
+    && modelInList(recommendation?.deepModel, props.deepModels)
+})
+
 const applyRecommendedModels = () => {
-  if (modelRecommendation.value?.quickModel && modelRecommendation.value?.deepModel) {
-    localQuickModel.value = modelRecommendation.value.quickModel
-    localDeepModel.value = modelRecommendation.value.deepModel
-    
-    emit('update:quickAnalysisModel', modelRecommendation.value.quickModel)
-    emit('update:deepAnalysisModel', modelRecommendation.value.deepModel)
-
-    // 清除推荐提示
+  if (!canApplyRecommendation.value || !modelRecommendation.value?.quickModel || !modelRecommendation.value?.deepModel) {
     modelRecommendation.value = null
-
-    ElMessage.success('已应用推荐的模型配置')
+    return
   }
+  localQuickModel.value = modelRecommendation.value.quickModel
+  localDeepModel.value = modelRecommendation.value.deepModel
+  emit('update:quickAnalysisModel', modelRecommendation.value.quickModel)
+  emit('update:deepAnalysisModel', modelRecommendation.value.deepModel)
+  modelRecommendation.value = null
+  ElMessage.success('已应用推荐的模型配置')
 }
 
 // 监听分析深度变化

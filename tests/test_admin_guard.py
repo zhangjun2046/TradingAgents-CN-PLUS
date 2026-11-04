@@ -119,8 +119,14 @@ def test_public_models_user_ok_no_secrets():
     )
     client = _client(USER)
     with patch(
-        "app.routers.public_config.config_service.get_system_config",
+        "app.services.config_service.config_service.get_system_config",
         new=AsyncMock(return_value=fake),
+    ), patch(
+        "app.services.available_models.fetch_provider_flags",
+        new=AsyncMock(return_value=[{"name": "dashscope", "is_active": True}]),
+    ), patch(
+        "app.routers.public_config.config_provider.get_effective_system_settings",
+        new=AsyncMock(return_value={}),
     ):
         resp = client.get("/api/config/public/models")
     assert resp.status_code == 200
@@ -136,6 +142,8 @@ def test_public_models_user_ok_no_secrets():
         "capability_level": 3,
         "roles": ["both"],
     }
+    assert data["quick_models"] == [model]
+    assert data["deep_models"] == [model]
     dumped = str(body)
     assert "sk-secret" not in dumped
     assert "secret.example" not in dumped
