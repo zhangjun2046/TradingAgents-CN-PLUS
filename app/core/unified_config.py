@@ -113,6 +113,9 @@ class UnifiedConfigManager:
                     max_tokens=model.get("max_tokens", 4000),
                     temperature=model.get("temperature", 0.7),
                     enabled=model.get("enabled", True),
+                    enable_thinking=model.get("enable_thinking", False),
+                    timeout=model.get("timeout", 180),
+                    retry_times=model.get("retry_times", 3),
                     description=f"{model.get('provider', '')} {model.get('model_name', '')}"
                 )
                 llm_configs.append(llm_config)
@@ -136,7 +139,10 @@ class UnifiedConfigManager:
                 "base_url": llm_config.api_base,
                 "max_tokens": llm_config.max_tokens,
                 "temperature": llm_config.temperature,
-                "enabled": llm_config.enabled
+                "enabled": llm_config.enabled,
+                "enable_thinking": getattr(llm_config, "enable_thinking", False),
+                "timeout": getattr(llm_config, "timeout", 180),
+                "retry_times": getattr(llm_config, "retry_times", 3),
             }
             
             # 查找并更新现有配置，或添加新配置

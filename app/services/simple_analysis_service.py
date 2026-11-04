@@ -269,6 +269,81 @@ def get_provider_and_url_by_model_sync(model_name: str) -> dict:
         }
 
 
+def _load_active_provider_sync(provider_name: str) -> Optional[dict]:
+    """读取厂家当前地址和密钥。失败抛异常，不把异常当成厂家不存在。"""
+    from pymongo import MongoClient
+    from app.core.config import settings
+
+    client = MongoClient(settings.MONGO_URI)
+    try:
+        return client[settings.MONGO_DB].llm_providers.find_one(
+            {"name": provider_name},
+            {"name": 1, "is_active": 1, "default_base_url": 1, "api_key": 1},
+        )
+    finally:
+        client.close()
+
+
+def _load_slot_model_configs(quick_model: str, quick_provider: str, deep_model: str, deep_provider: str):
+    """按厂家和模型名取已启用配置，并按范围写入思考开关。"""
+    from app.services.available_models import load_model_catalog_sync
+    from tradingagents.llm_adapters.thinking_mode import runtime_model_dict
+
+    try:
+        catalog = load_model_catalog_sync()
+        rows = list(catalog.configs or [])
+    except Exception as exc:
+        logger.warning(f"⚠️ 读取模型思考开关失败，本次不传思考参数: {exc}")
+        return None, None
+
+    def _pick(model_name: str, provider: str):
+        for item in rows:
+            name = item.get("model_name") if isinstance(item, dict) else getattr(item, "model_name", None)
+            item_provider = item.get("provider") if isinstance(item, dict) else getattr(item, "provider", None)
+            if name == model_name and item_provider == provider:
+                return runtime_model_dict(item, model_name)
+        return None
+
+    return _pick(quick_model, quick_provider), _pick(deep_model, deep_provider)
+
+
+def get_available_model_endpoint_sync(model_name: str) -> dict:
+    """只在可用名单里查厂家、地址和密钥。查不到或地址都空时失败，不猜厂家、不用写死地址。"""
+    from app.services.available_models import (
+        ModelCatalogError,
+        ModelEndpointError,
+        load_model_catalog_sync,
+        resolve_available_endpoint,
+    )
+
+    try:
+        catalog = load_model_catalog_sync()
+    except ModelCatalogError as exc:
+        raise ModelEndpointError("模型列表加载失败，请稍后重试") from exc
+
+    config = None
+    for item in catalog.configs:
+        name = item.get("model_name") if isinstance(item, dict) else getattr(item, "model_name", None)
+        if name == model_name:
+            config = item
+            break
+    if config is None:
+        raise ModelEndpointError(f"模型 {model_name} 已不可用")
+
+    provider_name = config.get("provider") if isinstance(config, dict) else getattr(config, "provider", None)
+    try:
+        provider = _load_active_provider_sync(provider_name)
+    except Exception as exc:
+        raise ModelEndpointError("模型列表加载失败，请稍后重试") from exc
+
+    return resolve_available_endpoint(
+        model_name,
+        config,
+        provider,
+        _get_env_api_key_for_provider(str(provider_name or "")),
+    )
+
+
 def _get_env_api_key_for_provider(provider: str) -> str:
     """
     从环境变量获取指定供应商的 API Key
@@ -426,7 +501,9 @@ def create_analysis_config(
     llm_provider: str,
     market_type: str = "A股",
     quick_model_config: dict = None,  # 新增：快速模型的完整配置
-    deep_model_config: dict = None    # 新增：深度模型的完整配置
+    deep_model_config: dict = None,    # 新增：深度模型的完整配置
+    quick_endpoint: dict = None,  # 已按可用名单解析的快速模型地址和密钥
+    deep_endpoint: dict = None,   # 已按可用名单解析的深度模型地址和密钥
 ) -> dict:
     """
     创建分析配置 - 支持数字等级和中文等级
@@ -547,59 +624,65 @@ def create_analysis_config(
         config["memory_enabled"] = True
         config["online_tools"] = True
 
-    # 🔧 获取 backend_url 和 API Key（优先级：模型配置 > 厂家配置 > 环境变量）
-    try:
-        # 1️⃣ 优先从数据库获取（包含模型配置的 api_base、API Key 和厂家的 default_base_url、API Key）
-        quick_provider_info = get_provider_and_url_by_model_sync(quick_model)
-        deep_provider_info = get_provider_and_url_by_model_sync(deep_model)
+    # 单股分析传入已解析的地址和密钥时，不再回退到写死的公共地址。
+    if quick_endpoint is not None and deep_endpoint is not None:
+        config["backend_url"] = quick_endpoint["backend_url"]
+        config["quick_api_key"] = quick_endpoint.get("api_key")
+        config["deep_api_key"] = deep_endpoint.get("api_key")
+        logger.info(f"✅ 使用可用名单中的 backend_url: {quick_endpoint['backend_url']}")
+        logger.info(f"🔑 快速模型 API Key: {'已配置' if config['quick_api_key'] else '未配置'}")
+        logger.info(f"🔑 深度模型 API Key: {'已配置' if config['deep_api_key'] else '未配置'}")
+    else:
+        # 旧队列仍走原来的查找和回退
+        try:
+            quick_provider_info = get_provider_and_url_by_model_sync(quick_model)
+            deep_provider_info = get_provider_and_url_by_model_sync(deep_model)
 
-        config["backend_url"] = quick_provider_info["backend_url"]
-        config["quick_api_key"] = quick_provider_info.get("api_key")  # 🔥 保存快速模型的 API Key
-        config["deep_api_key"] = deep_provider_info.get("api_key")    # 🔥 保存深度模型的 API Key
+            config["backend_url"] = quick_provider_info["backend_url"]
+            config["quick_api_key"] = quick_provider_info.get("api_key")
+            config["deep_api_key"] = deep_provider_info.get("api_key")
 
-        logger.info(f"✅ 使用数据库配置的 backend_url: {quick_provider_info['backend_url']}")
-        logger.info(f"   来源: 模型 {quick_model} 的配置或厂家 {quick_provider_info['provider']} 的默认地址")
-        logger.info(f"🔑 快速模型 API Key: {'已配置' if config['quick_api_key'] else '未配置（将使用环境变量）'}")
-        logger.info(f"🔑 深度模型 API Key: {'已配置' if config['deep_api_key'] else '未配置（将使用环境变量）'}")
-    except Exception as e:
-        logger.warning(f"⚠️  无法从数据库获取 backend_url 和 API Key: {e}")
-        # 2️⃣ 回退到硬编码的默认 URL，API Key 将从环境变量读取
-        if llm_provider == "dashscope":
-            config["backend_url"] = "https://dashscope.aliyuncs.com/api/v1"
-        elif llm_provider == "deepseek":
-            config["backend_url"] = "https://api.deepseek.com"
-        elif llm_provider == "openai":
-            config["backend_url"] = "https://api.openai.com/v1"
-        elif llm_provider == "google":
-            config["backend_url"] = "https://generativelanguage.googleapis.com/v1beta"
-        elif llm_provider == "qianfan":
-            config["backend_url"] = "https://aip.baidubce.com"
-        else:
-            # 🔧 未知厂家，尝试从数据库获取厂家的 default_base_url
-            logger.warning(f"⚠️  未知厂家 {llm_provider}，尝试从数据库获取配置")
-            try:
-                from pymongo import MongoClient
-                from app.core.config import settings
-
-                client = MongoClient(settings.MONGO_URI)
-                db = client[settings.MONGO_DB]
-                providers_collection = db.llm_providers
-                provider_doc = providers_collection.find_one({"name": llm_provider})
-
-                if provider_doc and provider_doc.get("default_base_url"):
-                    config["backend_url"] = provider_doc["default_base_url"]
-                    logger.info(f"✅ 从数据库获取自定义厂家 {llm_provider} 的 backend_url: {config['backend_url']}")
-                else:
-                    # 如果数据库中也没有，使用 OpenAI 兼容格式作为最后的回退
-                    config["backend_url"] = "https://api.openai.com/v1"
-                    logger.warning(f"⚠️  数据库中未找到厂家 {llm_provider} 的配置，使用默认 OpenAI 端点")
-
-                client.close()
-            except Exception as e2:
-                logger.error(f"❌ 查询数据库失败: {e2}，使用默认 OpenAI 端点")
+            logger.info(f"✅ 使用数据库配置的 backend_url: {quick_provider_info['backend_url']}")
+            logger.info(f"   来源: 模型 {quick_model} 的配置或厂家 {quick_provider_info['provider']} 的默认地址")
+            logger.info(f"🔑 快速模型 API Key: {'已配置' if config['quick_api_key'] else '未配置（将使用环境变量）'}")
+            logger.info(f"🔑 深度模型 API Key: {'已配置' if config['deep_api_key'] else '未配置（将使用环境变量）'}")
+        except Exception as e:
+            logger.warning(f"⚠️  无法从数据库获取 backend_url 和 API Key: {e}")
+            # 回退到硬编码的默认 URL，API Key 将从环境变量读取
+            if llm_provider == "dashscope":
+                config["backend_url"] = "https://dashscope.aliyuncs.com/api/v1"
+            elif llm_provider == "deepseek":
+                config["backend_url"] = "https://api.deepseek.com"
+            elif llm_provider == "openai":
                 config["backend_url"] = "https://api.openai.com/v1"
+            elif llm_provider == "google":
+                config["backend_url"] = "https://generativelanguage.googleapis.com/v1beta"
+            elif llm_provider == "qianfan":
+                config["backend_url"] = "https://aip.baidubce.com"
+            else:
+                logger.warning(f"⚠️  未知厂家 {llm_provider}，尝试从数据库获取配置")
+                try:
+                    from pymongo import MongoClient
+                    from app.core.config import settings
 
-        logger.info(f"⚠️  使用回退的 backend_url: {config['backend_url']}")
+                    client = MongoClient(settings.MONGO_URI)
+                    db = client[settings.MONGO_DB]
+                    providers_collection = db.llm_providers
+                    provider_doc = providers_collection.find_one({"name": llm_provider})
+
+                    if provider_doc and provider_doc.get("default_base_url"):
+                        config["backend_url"] = provider_doc["default_base_url"]
+                        logger.info(f"✅ 从数据库获取自定义厂家 {llm_provider} 的 backend_url: {config['backend_url']}")
+                    else:
+                        config["backend_url"] = "https://api.openai.com/v1"
+                        logger.warning(f"⚠️  数据库中未找到厂家 {llm_provider} 的配置，使用默认 OpenAI 端点")
+
+                    client.close()
+                except Exception as e2:
+                    logger.error(f"❌ 查询数据库失败: {e2}，使用默认 OpenAI 端点")
+                    config["backend_url"] = "https://api.openai.com/v1"
+
+            logger.info(f"⚠️  使用回退的 backend_url: {config['backend_url']}")
 
     # 添加分析师配置
     config["selected_analysts"] = selected_analysts
@@ -809,6 +892,97 @@ class SimpleAnalysisService:
 
         return trading_graph
 
+    async def _ensure_analysis_models(self, request) -> None:
+        """创建任务前确认快速、深度模型都在对应侧名单里，并写回请求。"""
+        from app.models.analysis import AnalysisParameters
+        from app.services.available_models import (
+            ModelCatalogError,
+            explicit_model_name,
+            load_model_catalog,
+            resolve_submission,
+        )
+        from app.services.model_capability_service import get_model_capability_service
+
+        try:
+            catalog = await load_model_catalog()
+        except ModelCatalogError as exc:
+            raise ValueError("模型列表加载失败，请稍后重试") from exc
+
+        params = request.parameters
+        depth = getattr(params, "research_depth", None) or "标准"
+        recommend = get_model_capability_service().recommend_from_configs(catalog.configs, depth)
+        quick, deep = resolve_submission(
+            explicit_model_name(params, "quick_analysis_model"),
+            explicit_model_name(params, "deep_analysis_model"),
+            catalog.quick_models,
+            catalog.deep_models,
+            catalog.models,
+            recommend,
+        )
+        if request.parameters is None:
+            request.parameters = AnalysisParameters(
+                quick_analysis_model=quick,
+                deep_analysis_model=deep,
+            )
+        else:
+            request.parameters.quick_analysis_model = quick
+            request.parameters.deep_analysis_model = deep
+
+    def _select_runtime_models(self, request, capability_service, research_depth: str):
+        """执行分析时选择模型。验证不通过时只换成该侧名单里的推荐模型。"""
+        from app.services.available_models import (
+            ModelCatalogError,
+            explicit_model_name,
+            load_model_catalog_sync,
+            resolve_submission,
+        )
+
+        params = request.parameters
+        quick_name = explicit_model_name(params, "quick_analysis_model")
+        deep_name = explicit_model_name(params, "deep_analysis_model")
+        catalog = None
+        try:
+            catalog = load_model_catalog_sync()
+        except ModelCatalogError as exc:
+            logger.warning(f"⚠️ 读取可用模型失败，保留当前模型选择: {exc}")
+
+        if quick_name and deep_name:
+            logger.info(f"📝 [分析服务] 用户指定模型: quick={quick_name}, deep={deep_name}")
+            validation = capability_service.validate_model_pair(quick_name, deep_name, research_depth)
+            for warning in validation["warnings"]:
+                logger.warning(warning) if not validation["valid"] else logger.info(warning)
+            if validation["valid"] or catalog is None:
+                if validation["valid"]:
+                    logger.info(f"✅ 用户选择的模型验证通过: quick={quick_name}, deep={deep_name}")
+                return quick_name, deep_name
+
+            recommended = capability_service.recommend_from_configs(catalog.configs, research_depth)
+            quick_names = {item["name"] for item in catalog.quick_models}
+            deep_names = {item["name"] for item in catalog.deep_models}
+            if (
+                recommended
+                and recommended[0] in quick_names
+                and recommended[1] in deep_names
+            ):
+                logger.info(f"✅ 已切换到该侧名单内的推荐模型: quick={recommended[0]}, deep={recommended[1]}")
+                return recommended
+            logger.warning("⚠️ 推荐不到该侧名单内的模型，保留用户选择")
+            return quick_name, deep_name
+
+        if catalog is None:
+            raise ValueError("模型列表加载失败，请稍后重试")
+        recommended = capability_service.recommend_from_configs(catalog.configs, research_depth)
+        quick, deep = resolve_submission(
+            quick_name,
+            deep_name,
+            catalog.quick_models,
+            catalog.deep_models,
+            catalog.models,
+            recommended,
+        )
+        logger.info(f"🤖 自动选择模型: quick={quick}, deep={deep}")
+        return quick, deep
+
     async def create_analysis_task(
         self,
         user_id: str,
@@ -822,6 +996,9 @@ class SimpleAnalysisService:
         - 目标：从原本 60-120 秒降到 100ms 内返回，避免用户因为等待超时而重复提交
         """
         try:
+            # 创建任务前检查模型。只读配置和厂家，不发网络请求。
+            await self._ensure_analysis_models(request)
+
             task_id = str(uuid.uuid4())
 
             # 🔧 使用 get_symbol() 方法获取股票代码（兼容 symbol 和 stock_code 字段）
@@ -1168,6 +1345,28 @@ class SimpleAnalysisService:
         except Exception as e:
             logger.error(f"❌ 后台分析任务失败: {task_id} - {e}")
 
+            from app.services.available_models import ModelEndpointError
+            if isinstance(e, ModelEndpointError):
+                user_friendly_error = str(e)
+                if progress_tracker:
+                    progress_tracker.mark_failed(user_friendly_error)
+                await self.memory_manager.update_task_status(
+                    task_id=task_id,
+                    status=TaskStatus.FAILED,
+                    progress=0,
+                    message="分析失败",
+                    current_step="failed",
+                    error_message=user_friendly_error
+                )
+                await self._update_task_status(task_id, AnalysisStatus.FAILED, 0, user_friendly_error)
+                try:
+                    from app.services.analysis_complete_notify import publish_analysis_failure
+                    fail_code = stock_code or getattr(request, "stock_code", "") or ""
+                    await publish_analysis_failure(fail_code, user_friendly_error)
+                except Exception as feishu_err:
+                    logger.warning(f"⚠️ 飞书分析失败回推失败(忽略): {feishu_err}")
+                return
+
             # 格式化错误信息为用户友好的提示
             from ..utils.error_formatter import ErrorFormatter
 
@@ -1326,51 +1525,15 @@ class SimpleAnalysisService:
 
             research_depth = request.parameters.research_depth if request.parameters else "标准"
 
-            # 1. 检查前端是否指定了模型
-            if (request.parameters and
-                hasattr(request.parameters, 'quick_analysis_model') and
-                hasattr(request.parameters, 'deep_analysis_model') and
-                request.parameters.quick_analysis_model and
-                request.parameters.deep_analysis_model):
+            quick_model, deep_model = self._select_runtime_models(
+                request,
+                capability_service,
+                research_depth,
+            )
 
-                # 使用前端指定的模型
-                quick_model = request.parameters.quick_analysis_model
-                deep_model = request.parameters.deep_analysis_model
-
-                logger.info(f"📝 [分析服务] 用户指定模型: quick={quick_model}, deep={deep_model}")
-
-                # 验证模型是否合适
-                validation = capability_service.validate_model_pair(
-                    quick_model, deep_model, research_depth
-                )
-
-                if not validation["valid"]:
-                    # 记录警告
-                    for warning in validation["warnings"]:
-                        logger.warning(warning)
-
-                    # 如果模型不合适，自动切换到推荐模型
-                    logger.info(f"🔄 自动切换到推荐模型...")
-                    quick_model, deep_model = capability_service.recommend_models_for_depth(
-                        research_depth
-                    )
-                    logger.info(f"✅ 已切换: quick={quick_model}, deep={deep_model}")
-                else:
-                    # 即使验证通过，也记录警告信息
-                    for warning in validation["warnings"]:
-                        logger.info(warning)
-                    logger.info(f"✅ 用户选择的模型验证通过: quick={quick_model}, deep={deep_model}")
-
-            else:
-                # 2. 自动推荐模型
-                quick_model, deep_model = capability_service.recommend_models_for_depth(
-                    research_depth
-                )
-                logger.info(f"🤖 自动推荐模型: quick={quick_model}, deep={deep_model}")
-
-            # 🔧 根据快速模型和深度模型分别查找对应的供应商和 API URL
-            quick_provider_info = get_provider_and_url_by_model_sync(quick_model)
-            deep_provider_info = get_provider_and_url_by_model_sync(deep_model)
+            # 只在可用名单里查厂家、当前地址和当前密钥
+            quick_provider_info = get_available_model_endpoint_sync(quick_model)
+            deep_provider_info = get_available_model_endpoint_sync(deep_model)
 
             quick_provider = quick_provider_info["provider"]
             deep_provider = deep_provider_info["provider"]
@@ -1381,6 +1544,10 @@ class SimpleAnalysisService:
             logger.info(f"🔍 [API地址] 快速模型使用 backend_url: {quick_backend_url}")
             logger.info(f"🔍 [供应商查找] 深度模型 {deep_model} 对应的供应商: {deep_provider}")
             logger.info(f"🔍 [API地址] 深度模型使用 backend_url: {deep_backend_url}")
+
+            quick_model_config, deep_model_config = _load_slot_model_configs(
+                quick_model, quick_provider, deep_model, deep_provider
+            )
 
             # 检查两个模型是否来自同一个厂家
             if quick_provider == deep_provider:
@@ -1399,7 +1566,11 @@ class SimpleAnalysisService:
                 quick_model=quick_model,
                 deep_model=deep_model,
                 llm_provider=quick_provider,  # 主要使用快速模型的供应商
-                market_type=market_type  # 使用前端传递的市场类型
+                market_type=market_type,  # 使用前端传递的市场类型
+                quick_model_config=quick_model_config,
+                deep_model_config=deep_model_config,
+                quick_endpoint=quick_provider_info,
+                deep_endpoint=deep_provider_info,
             )
 
             # 🔧 添加混合模式配置
@@ -1976,6 +2147,10 @@ class SimpleAnalysisService:
 
         except Exception as e:
             logger.error(f"❌ [线程池] 分析执行失败: {task_id} - {e}")
+
+            from app.services.available_models import ModelEndpointError
+            if isinstance(e, ModelEndpointError):
+                raise
 
             # 格式化错误信息为用户友好的提示
             from ..utils.error_formatter import ErrorFormatter

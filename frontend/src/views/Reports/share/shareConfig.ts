@@ -209,13 +209,17 @@ export interface ShareLocation {
   role: string
 }
 
-/** 开发期分享页在 :3000，报告列表在 H5 :3100；同域部署时走当前站点 /m/ */
+/**
+ * PC 前端在 :3000，H5 报告列表在同一主机 :3100。
+ * 同域部署（当前页不是 3000 端口）时走当前站点 /m/。
+ */
 export function resolveReportListUrl(): string {
   if (typeof window === 'undefined') return '/m/#/pages/reports/list'
-  const { hostname, port, origin } = window.location
-  const isDevPc = (hostname === 'localhost' || hostname === '127.0.0.1') && port === '3000'
-  const base = isDevPc ? 'http://localhost:3100' : origin
-  return `${base}/m/#/pages/reports/list`
+  const { protocol, hostname, port, origin } = window.location
+  if (port === '3000') {
+    return `${protocol}//${hostname}:3100/m/#/pages/reports/list`
+  }
+  return `${origin}/m/#/pages/reports/list`
 }
 
 export function logBackToList(): void {

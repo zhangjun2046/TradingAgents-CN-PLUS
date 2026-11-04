@@ -133,6 +133,7 @@ class ConfigManagerCompat:
                             "max_tokens": llm.max_tokens,
                             "temperature": llm.temperature,
                             "enabled": llm.enabled,
+                            "enable_thinking": getattr(llm, "enable_thinking", False),
                         }
                         for llm in config.llm_configs
                     ]

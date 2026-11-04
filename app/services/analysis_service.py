@@ -136,29 +136,20 @@ class AnalysisService:
                     llm_configs = doc["llm_configs"]
                     logger.info(f"✅ 从 MongoDB 读取到 {len(llm_configs)} 个模型配置")
 
+                    from tradingagents.llm_adapters.thinking_mode import runtime_model_dict
                     for llm_config in llm_configs:
-                        if llm_config.get("model_name") == quick_model:
-                            quick_model_config = {
-                                "max_tokens": llm_config.get("max_tokens", 4000),
-                                "temperature": llm_config.get("temperature", 0.7),
-                                "timeout": llm_config.get("timeout", 180),
-                                "retry_times": llm_config.get("retry_times", 3),
-                                "api_base": llm_config.get("api_base")
-                            }
-                            logger.info(f"✅ 读取快速模型配置: {quick_model}")
-                            logger.info(f"   max_tokens={quick_model_config['max_tokens']}, temperature={quick_model_config['temperature']}")
-                            logger.info(f"   timeout={quick_model_config['timeout']}, retry_times={quick_model_config['retry_times']}")
-                            logger.info(f"   api_base={quick_model_config['api_base']}")
+                        if llm_config.get("model_name") == quick_model and quick_model_config is None:
+                            quick_model_config = runtime_model_dict(llm_config, quick_model)
+                            if quick_model_config:
+                                logger.info(f"✅ 读取快速模型配置: {quick_model}")
+                                logger.info(f"   max_tokens={quick_model_config['max_tokens']}, temperature={quick_model_config['temperature']}")
+                                logger.info(f"   timeout={quick_model_config['timeout']}, retry_times={quick_model_config['retry_times']}")
+                                logger.info(f"   api_base={quick_model_config['api_base']}")
 
-                        if llm_config.get("model_name") == deep_model:
-                            deep_model_config = {
-                                "max_tokens": llm_config.get("max_tokens", 4000),
-                                "temperature": llm_config.get("temperature", 0.7),
-                                "timeout": llm_config.get("timeout", 180),
-                                "retry_times": llm_config.get("retry_times", 3),
-                                "api_base": llm_config.get("api_base")
-                            }
-                            logger.info(f"✅ 读取深度模型配置: {deep_model} - {deep_model_config}")
+                        if llm_config.get("model_name") == deep_model and deep_model_config is None:
+                            deep_model_config = runtime_model_dict(llm_config, deep_model)
+                            if deep_model_config:
+                                logger.info(f"✅ 读取深度模型配置: {deep_model} - {deep_model_config}")
                 else:
                     logger.warning("⚠️ MongoDB 中没有找到系统配置，将使用默认参数")
             except Exception as e:
@@ -264,29 +255,20 @@ class AnalysisService:
                     llm_configs = doc["llm_configs"]
                     logger.info(f"✅ 从 MongoDB 读取到 {len(llm_configs)} 个模型配置")
 
+                    from tradingagents.llm_adapters.thinking_mode import runtime_model_dict
                     for llm_config in llm_configs:
-                        if llm_config.get("model_name") == quick_model:
-                            quick_model_config = {
-                                "max_tokens": llm_config.get("max_tokens", 4000),
-                                "temperature": llm_config.get("temperature", 0.7),
-                                "timeout": llm_config.get("timeout", 180),
-                                "retry_times": llm_config.get("retry_times", 3),
-                                "api_base": llm_config.get("api_base")
-                            }
-                            logger.info(f"✅ 读取快速模型配置: {quick_model}")
-                            logger.info(f"   max_tokens={quick_model_config['max_tokens']}, temperature={quick_model_config['temperature']}")
-                            logger.info(f"   timeout={quick_model_config['timeout']}, retry_times={quick_model_config['retry_times']}")
-                            logger.info(f"   api_base={quick_model_config['api_base']}")
+                        if llm_config.get("model_name") == quick_model and quick_model_config is None:
+                            quick_model_config = runtime_model_dict(llm_config, quick_model)
+                            if quick_model_config:
+                                logger.info(f"✅ 读取快速模型配置: {quick_model}")
+                                logger.info(f"   max_tokens={quick_model_config['max_tokens']}, temperature={quick_model_config['temperature']}")
+                                logger.info(f"   timeout={quick_model_config['timeout']}, retry_times={quick_model_config['retry_times']}")
+                                logger.info(f"   api_base={quick_model_config['api_base']}")
 
-                        if llm_config.get("model_name") == deep_model:
-                            deep_model_config = {
-                                "max_tokens": llm_config.get("max_tokens", 4000),
-                                "temperature": llm_config.get("temperature", 0.7),
-                                "timeout": llm_config.get("timeout", 180),
-                                "retry_times": llm_config.get("retry_times", 3),
-                                "api_base": llm_config.get("api_base")
-                            }
-                            logger.info(f"✅ 读取深度模型配置: {deep_model} - {deep_model_config}")
+                        if llm_config.get("model_name") == deep_model and deep_model_config is None:
+                            deep_model_config = runtime_model_dict(llm_config, deep_model)
+                            if deep_model_config:
+                                logger.info(f"✅ 读取深度模型配置: {deep_model} - {deep_model_config}")
                 else:
                     logger.warning("⚠️ MongoDB 中没有找到系统配置，将使用默认参数")
             except Exception as e:
@@ -639,24 +621,13 @@ class AnalysisService:
             deep_model_config = None
             llm_configs = unified_config.get_llm_configs()
 
+            from tradingagents.llm_adapters.thinking_mode import runtime_model_dict
             for llm_config in llm_configs:
-                if llm_config.model_name == quick_model:
-                    quick_model_config = {
-                        "max_tokens": llm_config.max_tokens,
-                        "temperature": llm_config.temperature,
-                        "timeout": llm_config.timeout,
-                        "retry_times": llm_config.retry_times,
-                        "api_base": llm_config.api_base
-                    }
+                if llm_config.model_name == quick_model and quick_model_config is None:
+                    quick_model_config = runtime_model_dict(llm_config, quick_model)
 
-                if llm_config.model_name == deep_model:
-                    deep_model_config = {
-                        "max_tokens": llm_config.max_tokens,
-                        "temperature": llm_config.temperature,
-                        "timeout": llm_config.timeout,
-                        "retry_times": llm_config.retry_times,
-                        "api_base": llm_config.api_base
-                    }
+                if llm_config.model_name == deep_model and deep_model_config is None:
+                    deep_model_config = runtime_model_dict(llm_config, deep_model)
 
             # 根据模型名称动态查找供应商
             llm_provider = await get_provider_by_model_name(quick_model)

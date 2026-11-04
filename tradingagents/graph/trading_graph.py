@@ -38,7 +38,25 @@ from .reflection import Reflector
 from .signal_processing import SignalProcessor
 
 
-def create_llm_by_provider(provider: str, model: str, backend_url: str, temperature: float, max_tokens: int, timeout: int, api_key: str = None):
+def _is_bailian_provider_name(provider: str) -> bool:
+    from tradingagents.llm_adapters.thinking_mode import is_bailian_provider
+    return is_bailian_provider(provider)
+
+
+def _thinking_init_kwargs(model_config: dict, provider: str, role: str, model: str, force_bool: bool = False) -> dict:
+    from tradingagents.llm_adapters.thinking_mode import log_slot
+    if not isinstance(model_config, dict) or "enable_thinking" not in model_config or model_config.get("enable_thinking") is None:
+        if force_bool:
+            log_slot(logger, role, model, False)
+            return {"enable_thinking": False}
+        log_slot(logger, role, model, "未传入")
+        return {}
+    enabled = bool(model_config.get("enable_thinking"))
+    log_slot(logger, role, model, str(enabled).lower())
+    return {"enable_thinking": enabled}
+
+
+def create_llm_by_provider(provider: str, model: str, backend_url: str, temperature: float, max_tokens: int, timeout: int, api_key: str = None, enable_thinking: bool = None):
     """
     根据 provider 创建对应的 LLM 实例
 
@@ -76,19 +94,21 @@ def create_llm_by_provider(provider: str, model: str, backend_url: str, temperat
             timeout=timeout
         )
 
-    elif provider.lower() == "dashscope":
+    elif _is_bailian_provider_name(provider):
         # 优先使用传入的 API Key，否则从环境变量读取
         dashscope_api_key = api_key or os.getenv('DASHSCOPE_API_KEY')
 
-        # 传递 base_url 参数，使厂家配置的 default_base_url 生效
-        return ChatDashScopeOpenAI(
+        dashscope_kwargs = dict(
             model=model,
-            api_key=dashscope_api_key,  # 🔥 传递 API Key
-            base_url=backend_url if backend_url else None,  # 如果有自定义 URL 则使用
+            api_key=dashscope_api_key,
+            base_url=backend_url if backend_url else None,
             temperature=temperature,
             max_tokens=max_tokens,
-            request_timeout=timeout
+            request_timeout=timeout,
         )
+        if enable_thinking is not None:
+            dashscope_kwargs["enable_thinking"] = enable_thinking
+        return ChatDashScopeOpenAI(**dashscope_kwargs)
 
     elif provider.lower() == "deepseek":
         # 优先使用传入的 API Key，否则从环境变量读取
@@ -96,14 +116,17 @@ def create_llm_by_provider(provider: str, model: str, backend_url: str, temperat
         if not deepseek_api_key:
             raise ValueError("使用DeepSeek需要设置DEEPSEEK_API_KEY环境变量或在数据库中配置API Key")
 
-        return ChatDeepSeek(
+        deepseek_kwargs = dict(
             model=model,
             api_key=deepseek_api_key,
             base_url=backend_url,
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=timeout
+            timeout=timeout,
         )
+        if enable_thinking is not None:
+            deepseek_kwargs["enable_thinking"] = enable_thinking
+        return ChatDeepSeek(**deepseek_kwargs)
 
     elif provider.lower() == "zhipu":
         # 智谱AI处理
@@ -246,6 +269,8 @@ class TradingAgentsGraph:
             logger.info(f"   深度模型: {self.config['deep_think_llm']} ({deep_provider})")
 
             # 使用统一的函数创建 LLM 实例
+            quick_thinking_kwargs = _thinking_init_kwargs(quick_config, quick_provider, "快速模型", self.config["quick_think_llm"])
+            deep_thinking_kwargs = _thinking_init_kwargs(deep_config, deep_provider, "深度模型", self.config["deep_think_llm"])
             self.quick_thinking_llm = create_llm_by_provider(
                 provider=quick_provider,
                 model=self.config["quick_think_llm"],
@@ -253,7 +278,8 @@ class TradingAgentsGraph:
                 temperature=quick_temperature,
                 max_tokens=quick_max_tokens,
                 timeout=quick_timeout,
-                api_key=self.config.get("quick_api_key")  # 🔥 传递 API Key
+                api_key=self.config.get("quick_api_key"),
+                enable_thinking=quick_thinking_kwargs.get("enable_thinking"),
             )
 
             self.deep_thinking_llm = create_llm_by_provider(
@@ -263,7 +289,8 @@ class TradingAgentsGraph:
                 temperature=deep_temperature,
                 max_tokens=deep_max_tokens,
                 timeout=deep_timeout,
-                api_key=self.config.get("deep_api_key")  # 🔥 传递 API Key
+                api_key=self.config.get("deep_api_key"),
+                enable_thinking=deep_thinking_kwargs.get("enable_thinking"),
             )
 
             logger.info(f"✅ [混合模式] LLM 实例创建成功")
@@ -470,13 +497,15 @@ class TradingAgentsGraph:
             logger.info(f"   request_timeout: {deep_timeout}")
             logger.info("=" * 80)
 
+            deep_thinking_kwargs = _thinking_init_kwargs(deep_config, self.config["llm_provider"], "深度模型", self.config["deep_think_llm"])
             self.deep_thinking_llm = ChatDashScopeOpenAI(
                 model=self.config["deep_think_llm"],
                 api_key=dashscope_api_key,  # 🔥 传递 API Key
                 base_url=backend_url if backend_url else None,  # 传递 base_url
                 temperature=deep_temperature,
                 max_tokens=deep_max_tokens,
-                request_timeout=deep_timeout
+                request_timeout=deep_timeout,
+                **deep_thinking_kwargs,
             )
 
             logger.info("=" * 80)
@@ -489,13 +518,15 @@ class TradingAgentsGraph:
             logger.info(f"   request_timeout: {quick_timeout}")
             logger.info("=" * 80)
 
+            quick_thinking_kwargs = _thinking_init_kwargs(quick_config, self.config["llm_provider"], "快速模型", self.config["quick_think_llm"])
             self.quick_thinking_llm = ChatDashScopeOpenAI(
                 model=self.config["quick_think_llm"],
                 api_key=dashscope_api_key,  # 🔥 传递 API Key
                 base_url=backend_url if backend_url else None,  # 传递 base_url
                 temperature=quick_temperature,
                 max_tokens=quick_max_tokens,
-                request_timeout=quick_timeout
+                request_timeout=quick_timeout,
+                **quick_thinking_kwargs,
             )
             logger.info(f"✅ [阿里百炼] 已应用用户配置的模型参数")
         elif (self.config["llm_provider"].lower() == "deepseek" or
@@ -526,14 +557,20 @@ class TradingAgentsGraph:
             logger.info(f"🔧 [DeepSeek-快速模型] max_tokens={quick_max_tokens}, temperature={quick_temperature}, timeout={quick_timeout}s")
             logger.info(f"🔧 [DeepSeek-深度模型] max_tokens={deep_max_tokens}, temperature={deep_temperature}, timeout={deep_timeout}s")
 
-            # 使用支持token统计的DeepSeek适配器
+            deep_thinking_kwargs = _thinking_init_kwargs(
+                deep_config, "deepseek", "深度模型", self.config["deep_think_llm"], force_bool=True
+            )
+            quick_thinking_kwargs = _thinking_init_kwargs(
+                quick_config, "deepseek", "快速模型", self.config["quick_think_llm"], force_bool=True
+            )
             self.deep_thinking_llm = ChatDeepSeek(
                 model=self.config["deep_think_llm"],
                 api_key=deepseek_api_key,
                 base_url=deepseek_base_url,
                 temperature=deep_temperature,
                 max_tokens=deep_max_tokens,
-                timeout=deep_timeout
+                timeout=deep_timeout,
+                **deep_thinking_kwargs,
             )
             self.quick_thinking_llm = ChatDeepSeek(
                 model=self.config["quick_think_llm"],
@@ -541,7 +578,8 @@ class TradingAgentsGraph:
                 base_url=deepseek_base_url,
                 temperature=quick_temperature,
                 max_tokens=quick_max_tokens,
-                timeout=quick_timeout
+                timeout=quick_timeout,
+                **quick_thinking_kwargs,
             )
 
             logger.info(f"✅ [DeepSeek] 已启用token统计功能并应用用户配置的模型参数")

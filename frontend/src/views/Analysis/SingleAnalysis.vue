@@ -170,13 +170,16 @@
                     size="large"
                     @click="submitAnalysis"
                     :loading="submitting"
-                    :disabled="!analysisForm.stockCode.trim()"
+                    :disabled="!canSubmitAnalysis"
                     class="submit-btn large-analysis-btn"
                     style="width: 280px; height: 56px; font-size: 18px; font-weight: 700; border-radius: 16px;"
                   >
                     <el-icon><TrendCharts /></el-icon>
                     开始智能分析
                   </el-button>
+                  <div v-if="analysisStatus === 'idle' && submitBlockReason" style="margin-top: 8px; color: #e6a23c; font-size: 13px;">
+                    {{ submitBlockReason }}
+                  </div>
 
                   <el-button
                     v-else-if="analysisStatus === 'running'"
@@ -369,7 +372,7 @@
                     </div>
                     <el-select v-model="modelSettings.quickAnalysisModel" size="small" style="width: 100%" filterable>
                       <el-option
-                        v-for="model in availableModels"
+                        v-for="model in quickModels"
                         :key="`quick-${model.provider}/${model.model_name}`"
                         :label="model.model_display_name || model.model_name"
                         :value="model.model_name"
@@ -409,11 +412,19 @@
                         <el-icon class="help-icon"><InfoFilled /></el-icon>
                       </el-tooltip>
                     </div>
-                    <DeepModelSelector v-model="modelSettings.deepAnalysisModel" :available-models="availableModels" type="deep" size="small" width="100%" />
+                    <DeepModelSelector v-model="modelSettings.deepAnalysisModel" :available-models="deepModels" type="deep" size="small" width="100%" />
                   </div>
                 </div>
 
                 <!-- 🆕 模型推荐提示 -->
+                <el-alert
+                  v-if="submitBlockReason"
+                  :title="submitBlockReason"
+                  type="warning"
+                  :closable="false"
+                  style="margin-top: 12px;"
+                />
+
                 <el-alert
                   v-if="modelRecommendation"
                   :title="modelRecommendation.title"
@@ -427,7 +438,7 @@
                         {{ modelRecommendation.message }}
                       </div>
                       <el-button
-                        v-if="modelRecommendation.quickModel && modelRecommendation.deepModel"
+                        v-if="canApplyRecommendation"
                         type="primary"
                         size="small"
                         @click="applyRecommendedModels"
@@ -784,12 +795,49 @@ const generateStepsFromBackend = (backendSteps: any[]) => {
 
 // 模型设置
 const modelSettings = ref({
-  quickAnalysisModel: 'qwen-turbo',
-  deepAnalysisModel: 'qwen-max'
+  quickAnalysisModel: '',
+  deepAnalysisModel: ''
 })
 
-// 可用的模型列表（从配置中获取）
-const availableModels = ref<any[]>([])
+// 快速、深度各自的可选名单。角色拆分由公开接口完成。
+const quickModels = ref<any[]>([])
+const deepModels = ref<any[]>([])
+const modelListMessage = ref('')
+const modelsLoaded = ref(false)
+
+const mapPublicModel = (model: { provider: string; name: string; display_name: string; capability_level?: number; roles?: string[] }) => ({
+  provider: model.provider,
+  model_name: model.name,
+  model_display_name: model.display_name,
+  enabled: true,
+  capability_level: model.capability_level,
+  suitable_roles: model.roles
+})
+
+const listedModel = (name: string | null | undefined, models: { model_name: string }[]) => {
+  if (!name) return ''
+  return models.some((item) => item.model_name === name) ? name : ''
+}
+
+const submitBlockReason = computed(() => {
+  if (!modelsLoaded.value) return ''
+  if (modelListMessage.value) return modelListMessage.value
+  if (!modelSettings.value.quickAnalysisModel || !modelSettings.value.deepAnalysisModel) {
+    return '请选择快速分析模型和深度决策模型'
+  }
+  return ''
+})
+
+const canSubmitAnalysis = computed(() => {
+  return modelsLoaded.value && !!analysisForm.stockCode.trim() && !submitBlockReason.value
+})
+
+const canApplyRecommendation = computed(() => {
+  const recommendation = modelRecommendation.value
+  if (!recommendation?.quickModel || !recommendation?.deepModel) return false
+  return quickModels.value.some((item) => item.model_name === recommendation.quickModel)
+    && deepModels.value.some((item) => item.model_name === recommendation.deepModel)
+})
 
 // 🆕 模型推荐提示
 const modelRecommendation = ref<{
@@ -1896,31 +1944,20 @@ const updateAnalysisSteps = (status: any) => {
 const initializeModelSettings = async () => {
   try {
     const pub = await configApi.getPublicModels()
-    modelSettings.value.quickAnalysisModel = pub.default_quick_model || 'qwen-turbo'
-    modelSettings.value.deepAnalysisModel = pub.default_deep_model || 'qwen-max'
-    availableModels.value = (pub.models || []).map((m) => ({
-      provider: m.provider,
-      model_name: m.name,
-      model_display_name: m.display_name,
-      enabled: true,
-      capability_level: m.capability_level,
-      suitable_roles: m.roles
-    }))
-
-    console.log('✅ 加载模型配置成功:', {
-      quick: modelSettings.value.quickAnalysisModel,
-      deep: modelSettings.value.deepAnalysisModel,
-      available: availableModels.value.length
-    })
-    console.log('🔍 可用模型详细信息:', availableModels.value.map(m => ({
-      model_name: m.model_name,
-      model_display_name: m.model_display_name,
-      provider: m.provider
-    })))
+    quickModels.value = (pub.quick_models || []).map(mapPublicModel)
+    deepModels.value = (pub.deep_models || []).map(mapPublicModel)
+    modelSettings.value.quickAnalysisModel = listedModel(pub.default_quick_model, quickModels.value)
+    modelSettings.value.deepAnalysisModel = listedModel(pub.default_deep_model, deepModels.value)
+    modelListMessage.value = pub.models.length === 0 ? '暂无可用模型，请联系管理员' : ''
   } catch (error) {
     console.error('加载默认模型配置失败:', error)
-    modelSettings.value.quickAnalysisModel = 'qwen-turbo'
-    modelSettings.value.deepAnalysisModel = 'qwen-max'
+    quickModels.value = []
+    deepModels.value = []
+    modelSettings.value.quickAnalysisModel = ''
+    modelSettings.value.deepAnalysisModel = ''
+    modelListMessage.value = '模型列表加载失败，请刷新页面重试'
+  } finally {
+    modelsLoaded.value = true
   }
 }
 
@@ -2112,8 +2149,8 @@ const checkModelSuitability = async () => {
       const deepModel = responseData.deep_model || '未知'
 
       // 获取模型的显示名称
-      const quickModelInfo = availableModels.value.find(m => m.model_name === quickModel)
-      const deepModelInfo = availableModels.value.find(m => m.model_name === deepModel)
+      const quickModelInfo = quickModels.value.find(m => m.model_name === quickModel)
+      const deepModelInfo = deepModels.value.find(m => m.model_name === deepModel)
 
       const quickDisplayName = quickModelInfo?.model_display_name || quickModel
       const deepDisplayName = deepModelInfo?.model_display_name || deepModel
@@ -2176,15 +2213,14 @@ const checkModelSuitability = async () => {
 
 // 应用推荐的模型配置
 const applyRecommendedModels = () => {
-  if (modelRecommendation.value?.quickModel && modelRecommendation.value?.deepModel) {
-    modelSettings.value.quickAnalysisModel = modelRecommendation.value.quickModel
-    modelSettings.value.deepAnalysisModel = modelRecommendation.value.deepModel
-
-    // 清除推荐提示
+  if (!canApplyRecommendation.value || !modelRecommendation.value?.quickModel || !modelRecommendation.value?.deepModel) {
     modelRecommendation.value = null
-
-    ElMessage.success('已应用推荐的模型配置')
+    return
   }
+  modelSettings.value.quickAnalysisModel = modelRecommendation.value.quickModel
+  modelSettings.value.deepAnalysisModel = modelRecommendation.value.deepModel
+  modelRecommendation.value = null
+  ElMessage.success('已应用推荐的模型配置')
 }
 
 // 监听分析深度变化

@@ -195,6 +195,10 @@ class LLMConfig(BaseModel):
     timeout: int = Field(default=180, description="请求超时时间(秒)")
     retry_times: int = Field(default=3, description="重试次数")
     enabled: bool = Field(default=True, description="是否启用")
+    enable_thinking: bool = Field(
+        default=False,
+        description="单股分析是否开启思考模式。仅对范围内的百炼千问和 DeepSeek 生效"
+    )
     description: Optional[str] = Field(None, description="配置描述")
 
     # 新增字段 - 来自sidebar.py的配置项
@@ -365,6 +369,10 @@ class LLMConfigRequest(BaseModel):
     timeout: int = 180  # 默认超时时间改为180秒
     retry_times: int = 3
     enabled: bool = True
+    enable_thinking: bool = Field(
+        default=False,
+        description="单股分析是否开启思考模式。仅对范围内的百炼千问和 DeepSeek 生效"
+    )
     description: Optional[str] = None
 
     # 新增字段以匹配前端

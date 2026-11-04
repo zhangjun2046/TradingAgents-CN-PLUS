@@ -533,7 +533,7 @@
                 filterable
               >
                 <el-option
-                  v-for="model in availableModelsForProvider(systemSettings.default_provider)"
+                  v-for="model in modelsForAnalysisRole(systemSettings.default_provider, 'quick')"
                   :key="`${model.provider}/${model.model_name}`"
                   :label="model.model_display_name || model.model_name"
                   :value="model.model_name"
@@ -555,7 +555,7 @@
                 filterable
               >
                 <el-option
-                  v-for="model in availableModelsForProvider(systemSettings.default_provider)"
+                  v-for="model in modelsForAnalysisRole(systemSettings.default_provider, 'deep')"
                   :key="`${model.provider}/${model.model_name}`"
                   :label="model.model_display_name || model.model_name"
                   :value="model.model_name"
@@ -1231,6 +1231,37 @@ const availableModelsForProvider = (providerId: string) => {
   return models
 }
 
+const modelsForAnalysisRole = (providerId: string, side: 'quick' | 'deep') => {
+  const models = availableModelsForProvider(providerId)
+  const wanted = side === 'quick' ? ['quick_analysis', 'both'] : ['deep_analysis', 'both']
+  const matched = models.filter((model) => {
+    const roles = Array.isArray(model.suitable_roles) && model.suitable_roles.length
+      ? model.suitable_roles
+      : ['both']
+    return roles.some((role: string) => wanted.includes(role))
+  })
+  return matched.length > 0 ? matched : models
+}
+
+const clearUnlistedSystemModels = () => {
+  const providerId = systemSettings.value.default_provider
+  if (!providerId) return
+  const quickModels = modelsForAnalysisRole(providerId, 'quick')
+  const deepModels = modelsForAnalysisRole(providerId, 'deep')
+  if (
+    systemSettings.value.quick_analysis_model &&
+    !quickModels.find((model) => model.model_name === systemSettings.value.quick_analysis_model)
+  ) {
+    systemSettings.value.quick_analysis_model = ''
+  }
+  if (
+    systemSettings.value.deep_analysis_model &&
+    !deepModels.find((model) => model.model_name === systemSettings.value.deep_analysis_model)
+  ) {
+    systemSettings.value.deep_analysis_model = ''
+  }
+}
+
 // 加载厂家列表
 const loadProviders = async () => {
   providersLoading.value = true
@@ -1469,6 +1500,7 @@ const loadSystemSettings = async () => {
     // 规整元数据为map
     const metaList = meta?.items || []
     systemSettingsMeta.value = Object.fromEntries(metaList.map((m: SettingMeta) => [m.key, m]))
+    clearUnlistedSystemModels()
   } catch (error) {
     ElMessage.error('加载系统设置失败')
   } finally {
@@ -1678,9 +1710,9 @@ const testProviderAPI = async (provider: LLMProvider) => {
     const result = await configApi.testProviderAPI(provider.id)
 
     if (result.success) {
-      ElMessage.success(`${provider.display_name} API测试成功`)
+      ElMessage.success(result.message || `${provider.display_name} API测试成功`)
     } else {
-      ElMessage.error(`${provider.display_name} API测试失败: ${result.message}`)
+      ElMessage.error(result.message || `${provider.display_name} API测试失败`)
     }
   } catch (error) {
     console.error('API测试失败:', error)
@@ -2181,19 +2213,7 @@ watch(
   () => systemSettings.value.default_provider,
   (newProvider, oldProvider) => {
     if (newProvider !== oldProvider && newProvider) {
-      const availableModels = availableModelsForProvider(newProvider)
-      const quickModel = systemSettings.value.quick_analysis_model
-      const deepModel = systemSettings.value.deep_analysis_model
-
-      // 如果当前选择的快速分析模型不属于新供应商，清空
-      if (quickModel && !availableModels.find(m => m.model_name === quickModel)) {
-        systemSettings.value.quick_analysis_model = ''
-      }
-
-      // 如果当前选择的深度决策模型不属于新供应商，清空
-      if (deepModel && !availableModels.find(m => m.model_name === deepModel)) {
-        systemSettings.value.deep_analysis_model = ''
-      }
+      clearUnlistedSystemModels()
     }
   }
 )

@@ -42,6 +42,7 @@ export interface LLMConfig {
   timeout: number
   retry_times: number
   enabled: boolean
+  enable_thinking?: boolean
   description?: string
   // 定价配置
   input_price_per_1k?: number
@@ -208,7 +209,8 @@ export const configApi = {
 
   // 测试厂家API
   testProviderAPI(providerId: string): Promise<{ success: boolean; message: string; data?: any }> {
-    return ApiClient.post(`/api/config/llm/providers/${providerId}/test`)
+    // 失败文案由厂家管理页自己提示，避免拦截器再弹一次
+    return ApiClient.post(`/api/config/llm/providers/${providerId}/test`, undefined, { skipErrorHandler: true })
   },
 
   // 获取可用的模型列表（按厂家分组）
@@ -222,9 +224,23 @@ export const configApi = {
 
   /** 普通用户可用的脱敏模型列表（不含 key） */
   async getPublicModels(): Promise<{
-    default_quick_model?: string
-    default_deep_model?: string
+    default_quick_model?: string | null
+    default_deep_model?: string | null
     models: Array<{
+      name: string
+      display_name: string
+      provider: string
+      capability_level?: number
+      roles?: string[]
+    }>
+    quick_models: Array<{
+      name: string
+      display_name: string
+      provider: string
+      capability_level?: number
+      roles?: string[]
+    }>
+    deep_models: Array<{
       name: string
       display_name: string
       provider: string
@@ -234,10 +250,13 @@ export const configApi = {
   }> {
     const res: any = await ApiClient.get('/api/config/public/models')
     const data = res?.data ?? res
+    const models = Array.isArray(data?.models) ? data.models : []
     return {
-      default_quick_model: data?.default_quick_model,
-      default_deep_model: data?.default_deep_model,
-      models: Array.isArray(data?.models) ? data.models : []
+      default_quick_model: data?.default_quick_model ?? null,
+      default_deep_model: data?.default_deep_model ?? null,
+      models,
+      quick_models: Array.isArray(data?.quick_models) ? data.quick_models : [],
+      deep_models: Array.isArray(data?.deep_models) ? data.deep_models : []
     }
   },
 
@@ -453,15 +472,6 @@ export const configApi = {
     return ApiClient.get('/api/config/settings')
   },
 
-  // 获取默认模型配置（走公开接口，普通用户不再打 /config/settings）
-  async getDefaultModels(): Promise<{ quick_analysis_model: string; deep_analysis_model: string }> {
-    const pub = await configApi.getPublicModels()
-    return {
-      quick_analysis_model: pub.default_quick_model || 'qwen-turbo',
-      deep_analysis_model: pub.default_deep_model || 'qwen-max'
-    }
-  },
-
   // 更新系统设置
   updateSystemSettings(settings: Record<string, any>): Promise<{ message: string }> {
     return ApiClient.put('/api/config/settings', settings)
@@ -469,7 +479,8 @@ export const configApi = {
 
   // 测试配置连接
   testConfig(testRequest: ConfigTestRequest): Promise<ConfigTestResponse> {
-    return ApiClient.post('/api/config/test', testRequest)
+    // 失败文案由配置页自己提示，避免拦截器再弹一次相同消息
+    return ApiClient.post('/api/config/test', testRequest, { skipErrorHandler: true })
   },
 
   // 导出配置
@@ -546,7 +557,8 @@ export const DEFAULT_LLM_CONFIG: Partial<LLMConfig> = {
   temperature: 0.7,
   timeout: 60,
   retry_times: 3,
-  enabled: true
+  enabled: true,
+  enable_thinking: false
 }
 
 export const DEFAULT_DATA_SOURCE_CONFIG: Partial<DataSourceConfig> = {
