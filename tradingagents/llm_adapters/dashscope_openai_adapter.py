@@ -4,12 +4,22 @@
 利用百炼模型的原生 OpenAI 兼容性，无需额外的工具转换
 """
 
+import copy
 import os
 from typing import Any, Dict, List, Optional, Union, Sequence
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import BaseTool
 from pydantic import Field, SecretStr
 from ..config.config_manager import token_tracker
+from .thinking_mode import (
+    apply_reasoning_to_payload,
+    bailian_retry_extra,
+    capture_reasoning_on_result,
+    classify_thinking_error,
+    log_thinking_request,
+    log_thinking_retry,
+    strip_reasoning_messages,
+)
 
 # 导入日志模块
 from tradingagents.utils.logging_manager import get_logger
@@ -76,6 +86,18 @@ class ChatDashScopeOpenAI(ChatOpenAI):
         kwargs.setdefault("temperature", 0.1)
         kwargs.setdefault("max_tokens", 2000)
 
+        enable_thinking = kwargs.pop("enable_thinking", None)
+        kwargs.pop("thinking_budget", None)
+        extra_body = dict(kwargs.pop("extra_body", None) or {})
+        extra_body.pop("thinking", None)
+        if enable_thinking is True or enable_thinking is False:
+            extra_body["enable_thinking"] = bool(enable_thinking)
+        else:
+            extra_body.pop("enable_thinking", None)
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        thinking_extra_snapshot = copy.deepcopy(extra_body)
+
         # 检查 API 密钥和 base_url
         final_api_key = kwargs.get("api_key")
         final_base_url = kwargs.get("base_url")
@@ -91,6 +113,7 @@ class ChatDashScopeOpenAI(ChatOpenAI):
 
         # 调用父类初始化
         super().__init__(**kwargs)
+        object.__setattr__(self, "_thinking_configured_extra", thinking_extra_snapshot)
 
         logger.info(f"✅ 阿里百炼 OpenAI 兼容适配器初始化成功")
         logger.info(f"   模型: {kwargs.get('model', 'qwen-turbo')}")
@@ -98,12 +121,103 @@ class ChatDashScopeOpenAI(ChatOpenAI):
         # 兼容不同版本的属性名
         api_base = getattr(self, 'base_url', None) or getattr(self, 'openai_api_base', None) or kwargs.get('base_url', 'unknown')
         logger.info(f"   API Base: {api_base}")
-    
-    def _generate(self, *args, **kwargs):
-        """重写生成方法，添加 token 使用量追踪"""
-        
-        # 调用父类的生成方法
-        result = super()._generate(*args, **kwargs)
+
+    def _create_chat_result(self, response, generation_info=None):
+        result = super()._create_chat_result(response, generation_info)
+        response_dict = response if isinstance(response, dict) else response.model_dump()
+        choices = response_dict.get("choices") or []
+        for generation, choice in zip(result.generations, choices):
+            message = choice.get("message") if isinstance(choice, dict) else {}
+            text = (message or {}).get("reasoning_content")
+            if isinstance(text, str) and text:
+                generation.message.additional_kwargs["reasoning_content"] = text
+        return result
+
+    def _get_request_payload(self, input_, *, stop=None, **kwargs):
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        messages = input_ if isinstance(input_, list) else payload.get("messages") or []
+        apply_reasoning_to_payload(messages if isinstance(input_, list) else [], payload.get("messages"))
+        return payload
+
+    def _read_extra_body(self) -> Dict[str, Any]:
+        extra = getattr(self, "extra_body", None)
+        if isinstance(extra, dict):
+            return copy.deepcopy(extra)
+        model_kwargs = getattr(self, "model_kwargs", None) or {}
+        nested = model_kwargs.get("extra_body") if isinstance(model_kwargs, dict) else None
+        return copy.deepcopy(nested) if isinstance(nested, dict) else {}
+
+    def _write_extra_body(self, body: Dict[str, Any]) -> None:
+        payload = copy.deepcopy(body) if body else {}
+        try:
+            self.extra_body = payload or None
+        except Exception:
+            object.__setattr__(self, "extra_body", payload or None)
+        model_kwargs = getattr(self, "model_kwargs", None)
+        if isinstance(model_kwargs, dict):
+            if payload:
+                model_kwargs["extra_body"] = payload
+            else:
+                model_kwargs.pop("extra_body", None)
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        """重写生成方法，添加 token 使用量追踪和思考参数重发。"""
+        configured = copy.deepcopy(getattr(self, "_thinking_configured_extra", None) or self._read_extra_body())
+        call_extra = dict(kwargs.pop("extra_body", None) or configured)
+        call_extra.pop("thinking", None)
+        call_extra.pop("thinking_budget", None)
+        model_name = getattr(self, "model_name", None) or kwargs.get("model") or "dashscope"
+        sent = "enable_thinking" in call_extra
+        detail = f"enable_thinking={str(call_extra.get('enable_thinking')).lower()}" if sent else ""
+        log_thinking_request(logger, str(model_name), "dashscope", sent, detail)
+
+        def _invoke(active_messages, extra):
+            self._write_extra_body(extra)
+            return super(ChatDashScopeOpenAI, self)._generate(active_messages, stop, run_manager, **kwargs)
+
+        try:
+            result = _invoke(messages, call_extra)
+            located = capture_reasoning_on_result(result)
+            if located:
+                logger.info(f"🧠 [思考模式] model={model_name} reasoning_content 落点={located}")
+        except Exception as first_error:
+            kind = classify_thinking_error(str(first_error))
+            if not kind:
+                raise
+            logger.info(f"🧠 [思考模式] model={model_name} provider=dashscope 思考参数失败 kind={kind}")
+            if kind == "missing_reasoning":
+                try:
+                    result = _invoke(messages, call_extra)
+                    located = capture_reasoning_on_result(result)
+                    if located:
+                        logger.info(f"🧠 [思考模式] model={model_name} reasoning_content 落点={located}")
+                except Exception as second_error:
+                    second_kind = classify_thinking_error(str(second_error))
+                    if not second_kind:
+                        raise
+                    kind = second_kind
+                    first_error = second_error
+                    result = None
+            else:
+                result = None
+            if result is None:
+                retry_extra = bailian_retry_extra(call_extra, kind)
+                if kind in ("non_streaming", "budget", "missing_reasoning"):
+                    reason = "思考参数失败后本次发送 enable_thinking=false"
+                else:
+                    reason = "思考参数失败后去掉 enable_thinking"
+                log_thinking_retry(logger, str(model_name), "dashscope", reason)
+                try:
+                    result = _invoke(strip_reasoning_messages(messages), retry_extra)
+                    capture_reasoning_on_result(result)
+                except Exception:
+                    raise
+                finally:
+                    self._write_extra_body(configured)
+        finally:
+            self._write_extra_body(configured)
+
+        # 调用成功后的 token 统计沿用原逻辑。result 在失败重抛时不会走到这里。
         
         # 追踪 token 使用量
         try:
@@ -116,7 +230,7 @@ class ChatDashScopeOpenAI(ChatOpenAI):
                 
                 if input_tokens > 0 or output_tokens > 0:
                     # 生成会话ID
-                    session_id = kwargs.get('session_id', f"dashscope_openai_{hash(str(args))%10000}")
+                    session_id = kwargs.get('session_id', f"dashscope_openai_{hash(str(messages))%10000}")
                     analysis_type = kwargs.get('analysis_type', 'stock_analysis')
                     
                     # 使用 TokenTracker 记录使用量

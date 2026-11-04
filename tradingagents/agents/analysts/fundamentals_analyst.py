@@ -262,12 +262,23 @@ def create_fundamentals_analyst(llm, toolkit):
             original_base_url = getattr(llm, 'openai_api_base', None)
             original_api_key = getattr(llm, 'openai_api_key', None)
 
+            thinking_kwargs = {}
+            extra_body = getattr(llm, "extra_body", None)
+            if not isinstance(extra_body, dict):
+                model_kwargs = getattr(llm, "model_kwargs", None) or {}
+                extra_body = model_kwargs.get("extra_body") if isinstance(model_kwargs, dict) else None
+            if not isinstance(extra_body, dict):
+                extra_body = getattr(llm, "_thinking_configured_extra", None)
+            if isinstance(extra_body, dict) and "enable_thinking" in extra_body:
+                thinking_kwargs["enable_thinking"] = extra_body["enable_thinking"]
+
             fresh_llm = ChatDashScopeOpenAI(
                 model=llm.model_name,
                 api_key=original_api_key,  # 🔥 传递原始 LLM 的 API Key
                 base_url=original_base_url if original_base_url else None,  # 传递 base_url
                 temperature=llm.temperature,
-                max_tokens=getattr(llm, 'max_tokens', 2000)
+                max_tokens=getattr(llm, 'max_tokens', 2000),
+                **thinking_kwargs,
             )
 
             if original_base_url:

@@ -43,7 +43,7 @@ def test_address_note_only_warns_when_public_fallback_is_used():
         False,
     )
     assert "请求地址：https://gateway.example/v1/chat/completions" in configured["message"]
-    assert "分析不会使用这个公共地址" not in configured["message"]
+    assert "分析不会使用该公共地址" not in configured["message"]
 
     public = append_provider_test_address(
         {"success": False, "message": "测试失败"},
@@ -51,7 +51,7 @@ def test_address_note_only_warns_when_public_fallback_is_used():
         True,
     )
     assert "请求地址：https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" in public["message"]
-    assert "厂家默认地址未填写，分析不会使用这个公共地址" in public["message"]
+    assert "未填写默认地址，分析不会使用该公共地址。" in public["message"]
 
 
 class _Providers:
@@ -96,12 +96,12 @@ def test_provider_test_posts_configured_or_public_url_and_reports_it():
     configured = asyncio.run(run({"name": "dashscope", "default_base_url": "https://gateway.example/v1"}))
     assert posted[-1] == "https://gateway.example/v1/chat/completions"
     assert "请求地址：https://gateway.example/v1/chat/completions" in configured["message"]
-    assert "分析不会使用这个公共地址" not in configured["message"]
+    assert "分析不会使用该公共地址" not in configured["message"]
 
     public = asyncio.run(run({"name": "dashscope", "default_base_url": ""}))
     assert posted[-1] == "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     assert "请求地址：https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" in public["message"]
-    assert "厂家默认地址未填写，分析不会使用这个公共地址，请先填写后再做分析。" in public["message"]
+    assert "未填写默认地址，分析不会使用该公共地址。" in public["message"]
 
 
 def test_custom_provider_without_url_fails_before_request():

@@ -1710,9 +1710,9 @@ const testProviderAPI = async (provider: LLMProvider) => {
     const result = await configApi.testProviderAPI(provider.id)
 
     if (result.success) {
-      ElMessage.success(`${provider.display_name} API测试成功`)
+      ElMessage.success(result.message || `${provider.display_name} API测试成功`)
     } else {
-      ElMessage.error(`${provider.display_name} API测试失败: ${result.message}`)
+      ElMessage.error(result.message || `${provider.display_name} API测试失败`)
     }
   } catch (error) {
     console.error('API测试失败:', error)

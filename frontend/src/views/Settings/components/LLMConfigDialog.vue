@@ -176,6 +176,13 @@
         <el-switch v-model="formData.enabled" />
       </el-form-item>
 
+      <el-form-item v-if="showThinkingSwitch" label="思考模式">
+        <el-switch v-model="formData.enable_thinking" />
+        <div style="color: #909399; font-size: 12px; line-height: 1.5;">
+          关闭时单股分析不思考；打开后更慢、更费 token
+        </div>
+      </el-form-item>
+
       <el-form-item label="启用记忆功能">
         <el-switch v-model="formData.enable_memory" />
       </el-form-item>
@@ -379,6 +386,21 @@ const availableProviders = ref<LLMProvider[]>([])
 // Computed
 const isEdit = computed(() => !!props.config)
 
+function thinkingInScope(provider: string, modelName: string): boolean {
+  const providerName = (provider || '').toLowerCase()
+  const model = (modelName || '').toLowerCase()
+  const bailian = providerName === 'dashscope' || providerName === 'alibaba' || providerName.includes('dashscope') || (provider || '').includes('阿里百炼')
+  const deepseek = providerName === 'deepseek' || providerName.includes('deepseek')
+  if (deepseek) return true
+  if (!bailian) return false
+  if (model.includes('instruct')) return false
+  const version = model.match(/^qwen(\d+)/)
+  if (version && Number(version[1]) >= 3) return true
+  return model.startsWith('qwen-plus') || model.startsWith('qwen-turbo') || model.startsWith('qwen-flash')
+}
+
+const showThinkingSwitch = computed(() => thinkingInScope(formData.value.provider, formData.value.model_name))
+
 // 表单数据
 const defaultFormData = {
   provider: '',
@@ -390,6 +412,7 @@ const defaultFormData = {
   timeout: 180,  // 默认超时时间改为180秒
   retry_times: 3,
   enabled: true,
+  enable_thinking: false,
   enable_memory: false,
   enable_debug: false,
   priority: 0,
@@ -572,6 +595,7 @@ watch(
         currency: config.currency || defaultFormData.currency,
         // 确保显示名称正确加载
         model_display_name: config.model_display_name || '',
+        enable_thinking: config.enable_thinking ?? false,
         // 🆕 确保模型能力字段正确加载
         capability_level: config.capability_level ?? defaultFormData.capability_level,
         suitable_roles: config.suitable_roles || defaultFormData.suitable_roles,
@@ -618,6 +642,7 @@ watch(
           currency: props.config.currency || defaultFormData.currency,
           // 确保显示名称正确加载
           model_display_name: props.config.model_display_name || '',
+          enable_thinking: props.config.enable_thinking ?? false,
           // 🆕 确保模型能力字段正确加载
           capability_level: props.config.capability_level ?? defaultFormData.capability_level,
           suitable_roles: props.config.suitable_roles || defaultFormData.suitable_roles,
@@ -677,6 +702,9 @@ const handleSubmit = async () => {
 
     // 准备提交数据，移除api_key字段（由后端从厂家配置获取）
     const submitData = { ...formData.value }
+    if (!thinkingInScope(submitData.provider, submitData.model_name)) {
+      submitData.enable_thinking = false
+    }
     // 使用类型安全的方式移除api_key字段（如果存在的话）
     if ('api_key' in submitData) {
       delete (submitData as any).api_key  // 不发送api_key，让后端从厂家配置获取

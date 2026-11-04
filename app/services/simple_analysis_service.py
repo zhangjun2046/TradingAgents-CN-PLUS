@@ -284,6 +284,29 @@ def _load_active_provider_sync(provider_name: str) -> Optional[dict]:
         client.close()
 
 
+def _load_slot_model_configs(quick_model: str, quick_provider: str, deep_model: str, deep_provider: str):
+    """按厂家和模型名取已启用配置，并按范围写入思考开关。"""
+    from app.services.available_models import load_model_catalog_sync
+    from tradingagents.llm_adapters.thinking_mode import runtime_model_dict
+
+    try:
+        catalog = load_model_catalog_sync()
+        rows = list(catalog.configs or [])
+    except Exception as exc:
+        logger.warning(f"⚠️ 读取模型思考开关失败，本次不传思考参数: {exc}")
+        return None, None
+
+    def _pick(model_name: str, provider: str):
+        for item in rows:
+            name = item.get("model_name") if isinstance(item, dict) else getattr(item, "model_name", None)
+            item_provider = item.get("provider") if isinstance(item, dict) else getattr(item, "provider", None)
+            if name == model_name and item_provider == provider:
+                return runtime_model_dict(item, model_name)
+        return None
+
+    return _pick(quick_model, quick_provider), _pick(deep_model, deep_provider)
+
+
 def get_available_model_endpoint_sync(model_name: str) -> dict:
     """只在可用名单里查厂家、地址和密钥。查不到或地址都空时失败，不猜厂家、不用写死地址。"""
     from app.services.available_models import (
@@ -1522,6 +1545,10 @@ class SimpleAnalysisService:
             logger.info(f"🔍 [供应商查找] 深度模型 {deep_model} 对应的供应商: {deep_provider}")
             logger.info(f"🔍 [API地址] 深度模型使用 backend_url: {deep_backend_url}")
 
+            quick_model_config, deep_model_config = _load_slot_model_configs(
+                quick_model, quick_provider, deep_model, deep_provider
+            )
+
             # 检查两个模型是否来自同一个厂家
             if quick_provider == deep_provider:
                 logger.info(f"✅ [供应商验证] 两个模型来自同一厂家: {quick_provider}")
@@ -1540,6 +1567,8 @@ class SimpleAnalysisService:
                 deep_model=deep_model,
                 llm_provider=quick_provider,  # 主要使用快速模型的供应商
                 market_type=market_type,  # 使用前端传递的市场类型
+                quick_model_config=quick_model_config,
+                deep_model_config=deep_model_config,
                 quick_endpoint=quick_provider_info,
                 deep_endpoint=deep_provider_info,
             )

@@ -42,6 +42,7 @@ export interface LLMConfig {
   timeout: number
   retry_times: number
   enabled: boolean
+  enable_thinking?: boolean
   description?: string
   // 定价配置
   input_price_per_1k?: number
@@ -208,7 +209,8 @@ export const configApi = {
 
   // 测试厂家API
   testProviderAPI(providerId: string): Promise<{ success: boolean; message: string; data?: any }> {
-    return ApiClient.post(`/api/config/llm/providers/${providerId}/test`)
+    // 失败文案由厂家管理页自己提示，避免拦截器再弹一次
+    return ApiClient.post(`/api/config/llm/providers/${providerId}/test`, undefined, { skipErrorHandler: true })
   },
 
   // 获取可用的模型列表（按厂家分组）
@@ -555,7 +557,8 @@ export const DEFAULT_LLM_CONFIG: Partial<LLMConfig> = {
   temperature: 0.7,
   timeout: 60,
   retry_times: 3,
-  enabled: true
+  enabled: true,
+  enable_thinking: false
 }
 
 export const DEFAULT_DATA_SOURCE_CONFIG: Partial<DataSourceConfig> = {

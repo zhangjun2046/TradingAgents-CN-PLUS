@@ -31,7 +31,7 @@ PUBLIC_PROVIDER_BASE_URLS = {
     "google": "https://generativelanguage.googleapis.com/v1beta",
 }
 
-_PUBLIC_TEST_NOTICE = "厂家默认地址未填写，分析不会使用这个公共地址，请先填写后再做分析。"
+_PUBLIC_TEST_NOTICE = "未填写默认地址，分析不会使用该公共地址。"
 
 
 def clean_provider_base_url(value: Any) -> str:
@@ -92,6 +92,21 @@ def google_generate_content_url(base_url: Any, model_name: str) -> str:
 
 def missing_provider_url_message(display_name: str) -> str:
     return f"{display_name} 未配置 API 基础 URL，请先填写厂家默认地址后再测试"
+
+
+def short_vendor_error(detail: str) -> str:
+    """去掉厂商错误里的说明链接，只留一句短原因。"""
+    text = (detail or "").strip().split("\n", 1)[0].strip()
+    lowered = text.lower()
+    for marker in ("for details", "see:", "see http"):
+        index = lowered.find(marker)
+        if index > 0:
+            text = text[:index]
+            break
+    text = text.strip(" .;，。")
+    if len(text) > 60:
+        text = text[:60].rstrip() + "…"
+    return text
 
 
 def append_provider_test_address(result: Dict[str, Any], request_url: str, used_public: bool) -> Dict[str, Any]:
@@ -1024,7 +1039,12 @@ class ConfigService:
             elif provider_str == "deepseek":
                 # DeepSeek 使用专门的测试方法
                 logger.info(f"🔍 使用 DeepSeek 专用测试方法")
-                result = self._test_deepseek_api(api_key, f"{provider_str} {llm_config.model_name}", llm_config.model_name)
+                result = self._test_deepseek_api(
+                    api_key,
+                    f"{provider_str} {llm_config.model_name}",
+                    llm_config.model_name,
+                    enable_thinking=getattr(llm_config, "enable_thinking", False),
+                )
                 result["response_time"] = time.time() - start_time
                 return result
             elif provider_str == "dashscope":
@@ -1035,6 +1055,7 @@ class ConfigService:
                     f"{provider_str} {llm_config.model_name}",
                     llm_config.model_name,
                     api_base,
+                    enable_thinking=getattr(llm_config, "enable_thinking", False),
                 )
                 result["response_time"] = time.time() - start_time
                 return result
@@ -3640,7 +3661,7 @@ class ConfigService:
                 "message": f"{display_name} API测试异常: {str(e)}"
             }
 
-    def _test_deepseek_api(self, api_key: str, display_name: str, model_name: str = None, base_url: str = None) -> dict:
+    def _test_deepseek_api(self, api_key: str, display_name: str, model_name: str = None, base_url: str = None, enable_thinking: bool = None) -> dict:
         """测试DeepSeek API"""
         try:
             import requests
@@ -3666,12 +3687,16 @@ class ConfigService:
                 ],
                 "max_tokens": 200,
                 "temperature": 0.1,
-                # V4 系列默认开启思考模式，测试时关闭以避免 token 被推理耗尽
-                "thinking": {"type": "disabled"}
+                "thinking": {"type": "enabled" if enable_thinking is True else "disabled"},
             }
 
             # V4-Pro 首次调用可能较慢，超时略放宽
             response = requests.post(url, json=data, headers=headers, timeout=60)
+            if response.status_code != 200:
+                from tradingagents.llm_adapters.thinking_mode import classify_thinking_error
+                if classify_thinking_error(response.text):
+                    data["thinking"] = {"type": "disabled"}
+                    response = requests.post(url, json=data, headers=headers, timeout=60)
 
             if response.status_code == 200:
                 result = response.json()
@@ -3735,7 +3760,7 @@ class ConfigService:
             logger.warning(f"⚠️ 读取 {provider_name} 测试模型失败: {e}")
             return None
 
-    def _test_dashscope_api(self, api_key: str, display_name: str, model_name: str = None, base_url: str = None) -> dict:
+    def _test_dashscope_api(self, api_key: str, display_name: str, model_name: str = None, base_url: str = None, enable_thinking: bool = None) -> dict:
         """测试阿里云百炼 API。有厂家默认地址时用该地址，否则用公共兼容接口。"""
         try:
             import requests
@@ -3755,6 +3780,12 @@ class ConfigService:
                 "Authorization": f"Bearer {api_key}"
             }
 
+            from tradingagents.llm_adapters.thinking_mode import (
+                bailian_retry_extra,
+                classify_thinking_error,
+                thinking_in_scope,
+            )
+
             data = {
                 "model": model_name,
                 "messages": [
@@ -3763,8 +3794,13 @@ class ConfigService:
                 "max_tokens": 50,
                 "temperature": 0.1
             }
+            if enable_thinking is not None and thinking_in_scope("dashscope", model_name):
+                data["enable_thinking"] = bool(enable_thinking)
 
             response = requests.post(url, json=data, headers=headers, timeout=20)
+            if response.status_code != 200 and classify_thinking_error(response.text):
+                data = bailian_retry_extra(data, classify_thinking_error(response.text))
+                response = requests.post(url, json=data, headers=headers, timeout=20)
 
             if response.status_code == 200:
                 result = response.json()
@@ -3796,7 +3832,7 @@ class ConfigService:
                     detail = body.get("message") or body.get("code") or ""
             except Exception:
                 detail = (response.text or "")[:300]
-            detail = str(detail).strip()
+            detail = short_vendor_error(str(detail))
             suffix = f" {detail}" if detail else ""
             return {
                 "success": False,

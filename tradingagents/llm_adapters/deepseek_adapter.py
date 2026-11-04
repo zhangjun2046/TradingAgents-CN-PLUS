@@ -15,6 +15,14 @@ from tradingagents.utils.logging_init import setup_llm_logging
 
 # 导入日志模块
 from tradingagents.utils.logging_manager import get_logger, get_logger_manager
+from .thinking_mode import (
+    apply_reasoning_to_payload,
+    capture_reasoning_on_result,
+    classify_thinking_error,
+    log_thinking_request,
+    log_thinking_retry,
+    strip_reasoning_messages,
+)
 logger = get_logger('agents')
 logger = setup_llm_logging()
 
@@ -92,6 +100,9 @@ class ChatDeepSeek(ChatOpenAI):
                     "(设置 -> 大模型厂家) 或设置 DEEPSEEK_API_KEY 环境变量。"
                 )
         
+        enable_thinking = kwargs.pop("enable_thinking", None)
+        kwargs.pop("thinking_budget", None)
+
         # 初始化父类
         super().__init__(
             model=model,
@@ -103,7 +114,25 @@ class ChatDeepSeek(ChatOpenAI):
         )
         
         self.model_name = model
-        
+        object.__setattr__(self, "_enable_thinking", enable_thinking)
+
+    def _create_chat_result(self, response, generation_info=None):
+        result = super()._create_chat_result(response, generation_info)
+        response_dict = response if isinstance(response, dict) else response.model_dump()
+        choices = response_dict.get("choices") or []
+        for generation, choice in zip(result.generations, choices):
+            message = choice.get("message") if isinstance(choice, dict) else {}
+            text = (message or {}).get("reasoning_content")
+            if isinstance(text, str) and text:
+                generation.message.additional_kwargs["reasoning_content"] = text
+        return result
+
+    def _get_request_payload(self, input_, *, stop=None, **kwargs):
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        if isinstance(input_, list):
+            apply_reasoning_to_payload(input_, payload.get("messages"))
+        return payload
+
     def _generate(
         self,
         messages: List[BaseMessage],
@@ -122,18 +151,29 @@ class ChatDeepSeek(ChatOpenAI):
         session_id = kwargs.pop('session_id', None)
         analysis_type = kwargs.pop('analysis_type', None)
 
-        # 关闭 DeepSeek V4 系列的思考模式（thinking mode），避免 reasoning_content
-        # 在多轮工具调用中必须回传到 API 的限制。LangChain 的 ChatOpenAI 不识别
-        # reasoning_content 字段，会在序列化 AIMessage 时丢失，导致 V4 接口返回 400：
-        # "The `reasoning_content` in the thinking mode must be passed back to the API."
-        # 参考：https://api-docs.deepseek.com/guides/thinking_mode
         extra_body = kwargs.pop("extra_body", None) or {}
-        extra_body.setdefault("thinking", {"type": "disabled"})
+        extra_body.pop("enable_thinking", None)
+        thinking_on = getattr(self, "_enable_thinking", None) is True
+        extra_body["thinking"] = {"type": "enabled" if thinking_on else "disabled"}
         kwargs["extra_body"] = extra_body
+        log_thinking_request(
+            logger,
+            self.model_name,
+            "deepseek",
+            True,
+            f"thinking.type={extra_body['thinking']['type']}",
+        )
+
+        def _call(active_messages, body):
+            call_kwargs = dict(kwargs)
+            call_kwargs["extra_body"] = body
+            return super(ChatDeepSeek, self)._generate(active_messages, stop, run_manager, **call_kwargs)
 
         try:
-            # 调用父类方法生成响应
-            result = super()._generate(messages, stop, run_manager, **kwargs)
+            result = _call(messages, extra_body)
+            located = capture_reasoning_on_result(result)
+            if located:
+                logger.info(f"🧠 [思考模式] model={self.model_name} reasoning_content 落点={located}")
             
             # 提取token使用量
             input_tokens = 0
@@ -195,8 +235,32 @@ class ChatDeepSeek(ChatOpenAI):
             return result
             
         except Exception as e:
-            logger.error(f"❌ [DeepSeek] 调用失败: {e}", exc_info=True)
-            raise
+            kind = classify_thinking_error(str(e))
+            if not kind:
+                logger.error(f"❌ [DeepSeek] 调用失败: {e}", exc_info=True)
+                raise
+            logger.info(f"🧠 [思考模式] model={self.model_name} provider=deepseek 思考参数失败 kind={kind}")
+            if kind == "missing_reasoning":
+                try:
+                    result = _call(messages, extra_body)
+                    capture_reasoning_on_result(result)
+                    return result
+                except Exception as second_error:
+                    if not classify_thinking_error(str(second_error)):
+                        logger.error(f"❌ [DeepSeek] 调用失败: {second_error}", exc_info=True)
+                        raise
+                    e = second_error
+            disabled = dict(extra_body)
+            disabled["thinking"] = {"type": "disabled"}
+            disabled.pop("enable_thinking", None)
+            log_thinking_retry(logger, self.model_name, "deepseek", "思考参数失败后发送 thinking.type=disabled")
+            try:
+                result = _call(strip_reasoning_messages(messages), disabled)
+                capture_reasoning_on_result(result)
+                return result
+            except Exception as retry_error:
+                logger.error(f"❌ [DeepSeek] 调用失败: {retry_error}", exc_info=True)
+                raise
     
     def _estimate_input_tokens(self, messages: List[BaseMessage]) -> int:
         """
