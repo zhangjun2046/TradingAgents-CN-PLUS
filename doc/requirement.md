@@ -1,8 +1,8 @@
-# HunterAgent 1.0 需求说明书
+# HunterAgents 1.0 需求说明书
 
 | 项 | 说明 |
 |----|------|
-| 产品名 | **HunterAgent** |
+| 产品名 | **HunterAgents** |
 | 版本 | 1.0 |
 | 文档状态 | 草案（待评审） |
 | 关联文档 | [tech.md](./tech.md)（技术与合规决策纪要） |
@@ -27,7 +27,7 @@
 
 ### 1.1 背景
 
-本项目基于 TradingAgents-CN 进行二次开发。受微信小程序金融类目资质限制，手机端不走小程序，采用 **Web / H5** 路线（详见 [tech.md](./tech.md)）。产品对外品牌为 **HunterAgent**。
+本项目基于 TradingAgents-CN 进行二次开发。受微信小程序金融类目资质限制，手机端不走小程序，采用 **Web / H5** 路线（详见 [tech.md](./tech.md)）。产品对外品牌为 **HunterAgents**。
 
 ### 1.2 1.0 目标
 

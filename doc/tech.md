@@ -1,7 +1,7 @@
-# HunterAgent 移动端与合规技术决策纪要
+# HunterAgents 移动端与合规技术决策纪要
 
 > 整理日期：2026-10-17  
-> 产品名：**HunterAgent**  
+> 产品名：**HunterAgents**  
 > 主体方向：北京万商云猫智汇园区管理服务有限公司  
 > 本文归纳自项目可行性讨论，供后续排期与决策使用。
 
@@ -76,8 +76,8 @@
 | 项 | 建议 |
 |----|------|
 | ❌ 不宜使用 | `北京万商云猫智汇园区管理服务有限公司-AI/多智能体学习与研究助手`（超长；`/` 通常不在允许特殊符号内；不必写全公司名） |
-| ✅ 产品名 | **HunterAgent** |
-| ✅ 公众号昵称示例 | `HunterAgent学习助手` / `万商云猫HunterAgent` |
+| ✅ 产品名 | **HunterAgents** |
+| ✅ 公众号昵称示例 | `HunterAgents学习助手` / `万商云猫HunterAgents` |
 | 注意 | 勿使用与官方「TradingAgents-CN」易混淆名称；主体信息在认证资料中体现 |
 
 ### 3.4 公众号 vs 小程序审核差异
@@ -104,11 +104,11 @@
 
 ### 4.2 路径 A（长期合规终局）
 
-**定义**：只基于 Apache 部分自建 **HunterAgent** Web：
+**定义**：只基于 Apache 部分自建 **HunterAgents** Web：
 
 1. 对接 `tradingagents` 等开源核心（如 `TradingAgentsGraph.propagate`）；
 2. **自研** API + 移动端 H5（**不复制** `app/`、`frontend/`）；
-3. 品牌用 HunterAgent；关于页致谢 TradingAgents（及合规范围内的来源说明）。
+3. 品牌用 HunterAgents；关于页致谢 TradingAgents（及合规范围内的来源说明）。
 
 **技术难点**：
 
@@ -209,7 +209,7 @@
 | 做微信小程序完整分析？ | 否（无资质） |
 | 手机端技术？ | Web/PWA |
 | 挂服务号？ | 可选；正式则用备案域名 + HTTPS + 自有品牌短昵称 |
-| 产品名？ | HunterAgent |
+| 产品名？ | HunterAgents |
 | 是否现在启动路径 A？ | 成本上可暂缓；按 §5.3 触发 |
 | 现阶段是否收费？ | 否 |
 | 卖算力/订阅何时做？ | 授权或路径 A 之后 |

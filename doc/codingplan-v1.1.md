@@ -19,7 +19,7 @@
 > **磁盘硬性约束**见 [2.1 磁盘与路径硬性约束](#21-磁盘与路径硬性约束禁止占用-c-盘)。
 >
 > **本次范围**：H5（新建 `mobile/`）+ PC 前端（`frontend/`）同步 + 支撑它们的后端（`app/`）改造。
-> **不在本次范围**：微信公众号菜单挂接；项目整体改名为 HunterAgent（本次仍沿用 TradingAgents-CN 名称，改名将来作为整体任务单独进行）。
+> **不在本次范围**：微信公众号菜单挂接；项目整体改名为 HunterAgents（本次仍沿用 TradingAgents-CN 名称，改名将来作为整体任务单独进行）。
 
 ### 开发单元验收进度
 
@@ -40,7 +40,7 @@
 | P2.2 PC 菜单权限 + 路由守卫 + 用户手机号 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#13](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/13) | 管理菜单按角色隐藏；分析页改用公开模型接口 |
 | P3.2 H5 账号页面 | A | `line/auth` | 已合入本线 | 2026-10-23 | [#14](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/14) | 替换最简登录页；H5 注册/忘记密码/我的/协议页 |
 | P5.3 真实短信通道接入（腾讯云） | A | `line/auth` | 已合入本线 | 2026-10-26 | 配置 `.env`（不入库） | 腾讯云 SendSms 已通；注册可收信；密钥仅本机 `.env` |
-| P5.4 协议正文替换 + 上线检查清单 | A | `line/auth` | 已合入本线 | 2026-10-26 | [#18](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/18) | HunterAgent 正式协议；主体「本公司」；邮箱 ocm@onecloudmall.com；交接 `Deploy-Runbook.md`；mock 短信关闭阻塞于 P5.3 |
+| P5.4 协议正文替换 + 上线检查清单 | A | `line/auth` | 已合入本线 | 2026-10-26 | [#18](https://github.com/zhangjun2046/TradingAgents-CN-PLUS/pull/18) | HunterAgents 正式协议；主体「本公司」；邮箱 ocm@onecloudmall.com；交接 `Deploy-Runbook.md`；mock 短信关闭阻塞于 P5.3 |
 
 #### B 线进度（单股分析 + 分析报告）
 

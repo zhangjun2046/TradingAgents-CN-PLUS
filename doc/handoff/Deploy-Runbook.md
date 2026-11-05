@@ -9,7 +9,7 @@
 
 ## 0. 协议文案适配说明（供业务确认）
 
-正文为 **HunterAgent** 股票分析 PC + H5：运营主体「本公司」，联系邮箱 `ocm@onecloudmall.com`。请打开协议页审阅后再点验收。
+正文为 **HunterAgents** 股票分析 PC + H5：运营主体「本公司」，联系邮箱 `ocm@onecloudmall.com`。请打开协议页审阅后再点验收。
 
 ---
 

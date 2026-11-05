@@ -5,47 +5,24 @@
       <div class="hero-content">
         <div class="hero-text">
           <h1 class="hero-title">
-            TradingAgents-CN
-            <span class="version-badge">v1.0.0-preview</span>
+            HunterAgents
           </h1>
           <p class="hero-subtitle">
             现代化的多智能体股票分析学习平台
           </p>
           <p class="hero-description">
-            基于先进的AI技术，为投资者提供专业、准确、及时的股票分析服务。
-            采用多智能体协作模式，从不同角度对股票进行全方位分析，助您做出更明智的投资决策。
+            基于 AI 多智能体协作，从不同角度辅助分析股票。
+            分析结果仅供学习与研究，不构成投资建议。
           </p>
           <div class="hero-acknowledgment">
             <el-icon><Star /></el-icon>
-            <span>基于 <a href="https://github.com/TauricResearch/TradingAgents" target="_blank" rel="noopener noreferrer">TradingAgents</a> 项目开发，感谢原项目的贡献</span>
+            <span>分析引擎基于开源 <a href="https://github.com/TauricResearch/TradingAgents" target="_blank" rel="noopener noreferrer">TradingAgents</a>，本产品不是该项目或其 CN 版本</span>
           </div>
           <div class="hero-actions">
             <el-button type="primary" size="large" @click="goToAnalysis">
               <el-icon><TrendCharts /></el-icon>
               开始分析
             </el-button>
-            <el-button size="large" @click="viewDocumentation">
-              <el-icon><Document /></el-icon>
-              查看文档
-            </el-button>
-          </div>
-        </div>
-        <div class="hero-visual">
-          <div class="hero-card">
-            <div class="hero-stats">
-              <div class="stat-item">
-                <div class="stat-number">12</div>
-                <div class="stat-label">智能体</div>
-              </div>
-              <div class="stat-item">
-                <div class="stat-number">12+</div>
-                <div class="stat-label">数据源</div>
-              </div>
-              <div class="stat-item">
-                <div class="stat-number">24/7</div>
-                <div class="stat-label">实时监控</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -55,7 +32,7 @@
     <div class="features-section">
       <div class="section-header">
         <h2 class="section-title">核心功能</h2>
-        <p class="section-subtitle">强大的AI驱动分析能力，全方位投资决策支持</p>
+        <p class="section-subtitle">用于学习、研究与辅助分析，不构成投资建议</p>
       </div>
 
       <div class="features-grid">
@@ -66,7 +43,7 @@
             </div>
             <h3>多智能体分析</h3>
           </div>
-          <p>基本面、技术面、新闻分析、社媒分析等12个智能体协作，提供全方位的股票分析视角</p>
+          <p>基本面、技术面、新闻分析、社媒分析等智能体协作，从不同角度辅助分析股票</p>
           <div class="feature-tags">
             <el-tag size="small">基本面分析</el-tag>
             <el-tag size="small">技术分析</el-tag>
@@ -273,36 +250,32 @@
 
           <div class="origin-description">
             <p>
-              <strong>TradingAgents-CN</strong> 是基于 <strong>TradingAgents</strong> 项目开发的中文本地化版本。
-              原项目由 Tauric Research 团队开发，是一个创新的多智能体股票分析框架。
+              <strong>HunterAgents</strong> 的分析引擎基于开源项目 <strong>TradingAgents</strong>（Tauric Research）。
+              本产品不是 TradingAgents，也不是 TradingAgents-CN。
             </p>
             <p>
-              我们在原项目的基础上进行了以下改进和扩展：
+              HunterAgents 1.0 实际提供：
             </p>
             <ul class="origin-improvements">
               <li>
                 <el-icon class="check-icon"><CircleCheck /></el-icon>
-                <span><strong>完整的中文支持：</strong>针对中国A股市场优化，支持中文数据源和分析</span>
+                <span><strong>手机号账号：</strong>注册、登录、短信验证码、忘记密码</span>
               </li>
               <li>
                 <el-icon class="check-icon"><CircleCheck /></el-icon>
-                <span><strong>现代化Web界面：</strong>基于 Vue 3 + Element Plus 开发的全新前端界面</span>
+                <span><strong>H5 与 PC：</strong>同一套账号，可在手机页和电脑页使用</span>
               </li>
               <li>
                 <el-icon class="check-icon"><CircleCheck /></el-icon>
-                <span><strong>增强的数据源：</strong>集成 Tushare、AKShare 等中国市场数据源</span>
+                <span><strong>报告隔离：</strong>分析报告按用户分开存放</span>
               </li>
               <li>
                 <el-icon class="check-icon"><CircleCheck /></el-icon>
-                <span><strong>多LLM支持：</strong>支持国内外主流大语言模型（OpenAI、Claude、智谱AI、DeepSeek等）</span>
+                <span><strong>分享页：</strong>生成可打开的分析报告链接</span>
               </li>
               <li>
                 <el-icon class="check-icon"><CircleCheck /></el-icon>
-                <span><strong>批量分析功能：</strong>支持批量股票分析和任务管理</span>
-              </li>
-              <li>
-                <el-icon class="check-icon"><CircleCheck /></el-icon>
-                <span><strong>用户系统：</strong>完整的用户认证和个性化配置</span>
+                <span><strong>协议与隐私：</strong>HunterAgents 用户协议和隐私政策</span>
               </li>
             </ul>
             <p class="origin-thanks">
@@ -323,21 +296,16 @@
       <div class="version-info">
         <div class="version-card">
           <div class="version-main">
-            <div class="version-number">v1.0.0-preview</div>
-            <div class="version-status">预览版</div>
+            <div class="version-number">1.0</div>
           </div>
           <div class="version-details">
-            <div class="version-item">
-              <span class="label">发布日期</span>
-              <span class="value">2025-10-16</span>
-            </div>
             <div class="version-item">
               <span class="label">构建时间</span>
               <span class="value">{{ buildTime }}</span>
             </div>
             <div class="version-item">
               <span class="label">API版本</span>
-              <span class="value">v1.0.0-preview</span>
+              <span class="value">1.0</span>
             </div>
           </div>
         </div>
@@ -379,42 +347,8 @@
             <el-icon><Message /></el-icon>
           </div>
           <h4>邮箱联系</h4>
-          <p>hsliup@163.com</p>
+          <p>ocm@onecloudmall.com</p>
           <span class="contact-desc">技术支持和商务合作</span>
-        </div>
-
-        <div class="contact-card">
-          <div class="contact-icon qq">
-            <el-icon><ChatDotRound /></el-icon>
-          </div>
-          <h4>QQ交流群</h4>
-          <p>187537480</p>
-          <span class="contact-desc">用户交流和问题讨论</span>
-        </div>
-
-        <div class="contact-card">
-          <div class="contact-icon wechat">
-            <el-icon><ChatDotRound /></el-icon>
-          </div>
-          <h4>微信公众号</h4>
-          <p>TradingAgents-CN</p>
-          <span class="contact-desc">最新动态和使用教程</span>
-        </div>
-
-        <div class="contact-card">
-          <div class="contact-icon docs">
-            <el-icon><Document /></el-icon>
-          </div>
-          <h4>使用文档</h4>
-          <p>
-            <a href="https://mp.weixin.qq.com/s/ppsYiBncynxlsfKFG8uEbw"
-               target="_blank"
-               rel="noopener noreferrer"
-               class="doc-link">
-              查看详细文档
-            </a>
-          </p>
-          <span class="contact-desc">完整的使用指南和API文档</span>
         </div>
       </div>
     </div>
@@ -422,8 +356,9 @@
     <!-- Footer -->
     <div class="footer-section">
       <div class="footer-content">
-        <p>&copy; 2025 TradingAgents-CN. All rights reserved.</p>
-        <p>许可证说明：开源组件遵循 Apache 2.0；前端与后端采用专有许可证（个人学习/研究免费，商业使用需授权）。</p>
+        <p>&copy; 2026 HunterAgents. All rights reserved.</p>
+        <p>开源组件遵循各自许可证；产品与协议以 HunterAgents 用户协议、隐私政策为准。</p>
+        <IcpBeian />
       </div>
     </div>
   </div>
@@ -440,22 +375,18 @@ import {
   Monitor,
   Setting,
   Message,
-  ChatDotRound,
   Cpu,
   Star,
   Link,
   CircleCheck
 } from '@element-plus/icons-vue'
+import IcpBeian from '@/components/Layout/IcpBeian.vue'
 
 const router = useRouter()
 const buildTime = ref(new Date().toLocaleString('zh-CN'))
 
 const goToAnalysis = () => {
   router.push('/analysis/single')
-}
-
-const viewDocumentation = () => {
-  window.open('https://mp.weixin.qq.com/s/ppsYiBncynxlsfKFG8uEbw', '_blank')
 }
 </script>
 

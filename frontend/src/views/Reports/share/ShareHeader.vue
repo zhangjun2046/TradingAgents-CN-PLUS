@@ -4,7 +4,7 @@
       <a v-if="openedFromApp" class="back-list" :href="reportListUrl" @click="onBackToList">返回报告列表</a>
       <slot name="actions" />
     </div>
-    <p class="eyebrow">HunterAgent 分析报告</p>
+    <p class="eyebrow">HunterAgents 分析报告</p>
     <h1>{{ title }}</h1>
     <div class="meta">
       <span v-if="report.stock_symbol" class="chip-code">{{ report.stock_symbol }}</span>

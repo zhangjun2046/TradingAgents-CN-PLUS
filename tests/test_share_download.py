@@ -166,7 +166,7 @@ def test_download_markdown_without_login(env):
     assert resp.headers["content-type"].startswith("text/markdown")
     disposition = resp.headers["content-disposition"]
     assert disposition.startswith("attachment;")
-    assert f"filename*=UTF-8''{quote('000001_2025-10-14_HunterAgent.md')}" in disposition
+    assert f"filename*=UTF-8''{quote('000001_2025-10-14_HunterAgents.md')}" in disposition
     text = resp.content.decode("utf-8")
     assert "平安银行" in text and "均线多头排列" in text
     # 不含内部字段
@@ -183,7 +183,7 @@ def test_download_pdf_without_login(env):
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
     assert resp.content.startswith(b"%PDF")
-    assert "HunterAgent.pdf" in resp.headers["content-disposition"]
+    assert "HunterAgents.pdf" in resp.headers["content-disposition"]
 
 
 @pytest.mark.skipif(not report_exporter.docx_available, reason="Word 导出依赖不可用")

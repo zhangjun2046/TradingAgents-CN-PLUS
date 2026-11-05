@@ -81,7 +81,7 @@
 |----|------|
 | 默认格式 | `markdown` |
 | 内容 | 与公开页一致（使用公开序列化数据，不含内部字段） |
-| 响应 | 文件流；`Content-Disposition: attachment; filename="{ASCII 兜底名}"; filename*=UTF-8''{股票代码}_{日期}_HunterAgent.{md\|pdf\|docx}` |
+| 响应 | 文件流；`Content-Disposition: attachment; filename="{ASCII 兜底名}"; filename*=UTF-8''{股票代码}_{日期}_HunterAgents.{md\|pdf\|docx}` |
 | Content-Type | md：`text/markdown; charset=utf-8`；pdf：`application/pdf`；docx：`application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
 | 日期取值 | 优先 `analysis_date`，缺失用 `created_at` 日期，再缺失用当天 |
 | 计数 | 成功导出后 `report_shares.download_count + 1`；失败不计数 |
@@ -157,7 +157,7 @@ venv\Scripts\python -m pytest tests\test_share_download.py tests\test_report_sha
 手工验收示例：
 
 1. `admin` 或 `test_user_a` 登录，`POST /api/reports/{report_id}/share` 得到 `token`，确认 `expires_at - created_at` 为 30 天。
-2. 不带登录态，浏览器直接打开 `/api/reports/share/{token}/download?format=pdf`（再换 `markdown`、`docx`），下载后打开，确认中文正常、文件名为 `{股票代码}_{日期}_HunterAgent.{ext}`。
+2. 不带登录态，浏览器直接打开 `/api/reports/share/{token}/download?format=pdf`（再换 `markdown`、`docx`），下载后打开，确认中文正常、文件名为 `{股票代码}_{日期}_HunterAgents.{ext}`。
 3. `DELETE /api/reports/{report_id}/share` 撤销后，再访问导出地址应返回 404。
 4. `test_user_b` 访问 `test_user_a` 的 `/api/reports/{id}/detail` 返回 404。
 

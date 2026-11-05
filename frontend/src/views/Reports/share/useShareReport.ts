@@ -25,11 +25,11 @@ function scrollToTop(): void {
   if (typeof window !== 'undefined') window.scrollTo({ top: 0 })
 }
 
-/** 路由守卫会在每次 query 变化时把标题改回 TradingAgents-CN，这里改回分享页品牌 */
+/** 路由守卫会在每次 query 变化时重写 document.title，这里改回分享页品牌 */
 function applyDocumentTitle(reportData: SharedReport | null): void {
   if (typeof document === 'undefined' || !reportData) return
   const titleName = reportData.stock_name || reportData.stock_symbol || '分析报告'
-  document.title = `${titleName} - HunterAgent`
+  document.title = `${titleName} - HunterAgents`
 }
 
 export function useShareReport() {

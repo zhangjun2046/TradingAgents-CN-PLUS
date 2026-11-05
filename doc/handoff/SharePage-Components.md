@@ -101,7 +101,7 @@ frontend/src/utils/reportConclusion.ts   # 结论提取（纯函数）
 
 - 404 和 410 都当成链接失效。
 - 成功体要有 `success` 和 `data`。
-- 页面标题改为 `{股票名} - HunterAgent`。
+- 页面标题改为 `{股票名} - HunterAgents`。
 
 公开字段以 `Backend-API-Report.md` 第 2.3 节为准。概览用到 `recommendation`（分析参考，不是执行摘要）、`confidence_score`、`risk_level`、`key_points`。`decision` 可能是空对象。
 

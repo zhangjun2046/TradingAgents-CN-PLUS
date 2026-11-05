@@ -1,8 +1,8 @@
-# HunterAgent 1.0 H5 / Web 技术方案
+# HunterAgents 1.0 H5 / Web 技术方案
 
 | 项 | 说明 |
 |----|------|
-| 产品名 | **HunterAgent** |
+| 产品名 | **HunterAgents** |
 | 版本 | 1.0 |
 | 文档状态 | 评审中（0.5 已确认分享页导出弹层） |
 | 关联文档 | [requirement.md](./requirement.md)（需求说明书 v1.4）、[tech.md](./tech.md)（技术与合规决策纪要） |
@@ -24,7 +24,7 @@
 
 ### 1.1 目标
 
-在现有 TradingAgents-CN（FastAPI 后端 + Vue3 PC 前端）基础上，交付 HunterAgent 1.0 的 H5 / Web 能力，满足需求说明书第 5 章：
+在现有 TradingAgents-CN（FastAPI 后端 + Vue3 PC 前端）基础上，交付 HunterAgents 1.0 的 H5 / Web 能力，满足需求说明书第 5 章：
 
 1. 手机号注册 / 登录 / 忘记密码（H5 + PC 同步）；
 2. H5 单股分析：填写参数、提交、进度、完成后跳转报告分享页；
@@ -241,7 +241,7 @@ mobile/
 ```json
 {
   "h5": {
-    "title": "HunterAgent",
+    "title": "HunterAgents",
     "publicPath": "/m/",
     "router": { "mode": "hash", "base": "/m/" },
     "devServer": { "port": 3100 }
@@ -950,7 +950,7 @@ async def ensure_task_access(task_id: str, user: dict) -> None:
 
 | 方法 | 路径 | 参数 | 响应 |
 |------|------|------|------|
-| GET | `/api/reports/share/{token}/download` | `format=markdown\|pdf\|docx` | 文件流，`Content-Disposition: attachment; filename*=UTF-8''{股票代码}_{日期}_HunterAgent.{ext}` |
+| GET | `/api/reports/share/{token}/download` | `format=markdown\|pdf\|docx` | 文件流，`Content-Disposition: attachment; filename*=UTF-8''{股票代码}_{日期}_HunterAgents.{ext}` |
 
 - 实现：`get_public_report_by_token` 校验 token（无效 / 过期 / 撤销 → 404）→ 复用 `report_exporter.generate_markdown_report / generate_pdf_report / generate_docx_report`；
 - 导出内容与公开页一致（使用公开序列化后的数据），不包含内部字段；

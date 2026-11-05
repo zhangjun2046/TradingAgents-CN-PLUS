@@ -14,10 +14,11 @@
     <view class="mine-card links">
       <text class="link-item" @click="go('/pages/legal/agreement')">《用户协议》</text>
       <text class="link-item" @click="go('/pages/legal/privacy')">《隐私政策》</text>
-      <text class="meta">版本 1.0.0-preview</text>
+      <text class="meta">版本 1.0</text>
       <text class="meta source">
-        本产品基于 TradingAgents-CN 改造。分析引擎部分遵循 Apache 2.0；Web 壳（app / frontend）为上游专有许可。保留来源说明，当前仅供学习研究，不对外收费。
+        本产品是 HunterAgents。分析能力参考开源 TradingAgents，本产品不是该项目或其 CN 版本。用途与免责以用户协议为准。
       </text>
+      <text class="meta beian" @click="openBeian">京ICP备2021035986号-4</text>
     </view>
   </view>
 </template>
@@ -50,6 +51,12 @@ onShow(() => {
 
 function go(url: string) {
   uni.navigateTo({ url });
+}
+
+function openBeian() {
+  if (typeof window !== "undefined") {
+    window.open("https://beian.miit.gov.cn/", "_blank", "noopener");
+  }
 }
 
 function goLogin() {
@@ -109,5 +116,9 @@ async function onLogout() {
 }
 .source {
   margin-top: 8rpx;
+}
+.beian {
+  margin-top: 8rpx;
+  color: #409eff;
 }
 </style>

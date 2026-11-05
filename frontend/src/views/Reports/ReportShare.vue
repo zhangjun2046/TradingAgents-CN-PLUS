@@ -61,6 +61,7 @@
           <li>分析基于历史与公开信息，无法预测未来走势，投资有风险。</li>
           <li>投资决策及其后果由投资者自行承担。</li>
         </ul>
+        <IcpBeian />
       </footer>
     </article>
   </div>
@@ -74,6 +75,7 @@ import ExportBar from './share/ExportBar.vue'
 import OverviewPanel from './share/OverviewPanel.vue'
 import RolePanel from './share/RolePanel.vue'
 import ShareHeader from './share/ShareHeader.vue'
+import IcpBeian from '@/components/Layout/IcpBeian.vue'
 import { isWechatUserAgent } from './share/exportShare'
 import { OVERVIEW_DEPT_KEY, isOpenedFromApp, logBackToList, resolveReportListUrl } from './share/shareConfig'
 import { useShareReport } from './share/useShareReport'
