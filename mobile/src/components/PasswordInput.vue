@@ -9,7 +9,7 @@
       @confirm="$emit('confirm')"
     />
     <view class="pwd-toggle" @click="visible = !visible">
-      <image class="pwd-icon" :src="visible ? ICON_EYE_OFF : ICON_EYE" mode="aspectFit" />
+      <image class="pwd-icon" :src="visible ? ICON_EYE : ICON_EYE_OFF" mode="aspectFit" />
     </view>
   </view>
 </template>
