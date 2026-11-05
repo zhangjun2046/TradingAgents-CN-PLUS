@@ -2,6 +2,7 @@
   <div class="legal-page">
     <el-page-header :content="title" @back="goBack" />
     <div class="legal-body" v-html="html" />
+    <IcpBeian />
   </div>
 </template>
 
@@ -10,6 +11,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import IcpBeian from '@/components/Layout/IcpBeian.vue'
 
 const props = defineProps<{ file: string; title: string }>()
 const router = useRouter()

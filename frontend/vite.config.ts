@@ -33,8 +33,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'logo.svg', 'robots.txt'],
       manifest: {
-        name: 'TradingAgents-CN - 多智能体股票分析学习平台',
-        short_name: 'TradingAgents',
+        name: 'HunterAgents',
+        short_name: 'HunterAgents',
         description: '现代化的多智能体股票分析学习平台，支持A股、美股、港股分析',
         theme_color: '#409EFF',
         background_color: '#ffffff',

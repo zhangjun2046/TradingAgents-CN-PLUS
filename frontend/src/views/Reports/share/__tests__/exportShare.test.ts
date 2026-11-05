@@ -47,8 +47,8 @@ describe('parseDownloadError', () => {
 describe('filenameFromDisposition', () => {
   it('优先使用 UTF-8 文件名', () => {
     const header =
-      "attachment; filename=\"report.pdf\"; filename*=UTF-8''000001_2026-10-20_HunterAgent.pdf"
-    expect(filenameFromDisposition(header, 'fallback.pdf')).toBe('000001_2026-10-20_HunterAgent.pdf')
+      "attachment; filename=\"report.pdf\"; filename*=UTF-8''000001_2026-10-20_HunterAgents.pdf"
+    expect(filenameFromDisposition(header, 'fallback.pdf')).toBe('000001_2026-10-20_HunterAgents.pdf')
   })
 
   it('没有响应头时用兜底名', () => {

@@ -58,7 +58,7 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "HunterAgent",
+    "navigationBarTitleText": "HunterAgents",
     "navigationBarBackgroundColor": "#FFFFFF",
     "backgroundColor": "#F5F7FA"
   },

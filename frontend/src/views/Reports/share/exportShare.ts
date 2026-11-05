@@ -83,7 +83,7 @@ export function filenameFromDisposition(header: string | null, fallback: string)
 export function fallbackDownloadName(format: ShareExportFormat, symbol?: string): string {
   const ext = format === 'markdown' ? 'md' : format
   const base = (symbol || 'report').replace(/[^\w.-]+/g, '_') || 'report'
-  return `${base}_HunterAgent.${ext}`
+  return `${base}_HunterAgents.${ext}`
 }
 
 export async function fetchShareDownload(

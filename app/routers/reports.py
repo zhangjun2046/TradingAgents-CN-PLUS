@@ -297,7 +297,7 @@ _SHARE_EXPORT_FORMATS = {
 
 
 def _build_share_download_headers(report: Dict[str, Any], ext: str) -> Dict[str, str]:
-    """构造 Content-Disposition：{股票代码}_{日期}_HunterAgent.{ext}，filename* 使用 UTF-8 编码。"""
+    """构造 Content-Disposition：{股票代码}_{日期}_HunterAgents.{ext}，filename* 使用 UTF-8 编码。"""
     from urllib.parse import quote
     import re
 
@@ -307,7 +307,7 @@ def _build_share_download_headers(report: Dict[str, Any], ext: str) -> Dict[str,
     symbol = _safe(report.get("stock_symbol")) or "report"
     date_text = _safe(report.get("analysis_date")) or _safe(str(report.get("created_at", ""))[:10]) \
         or datetime.now().strftime("%Y-%m-%d")
-    filename = f"{symbol}_{date_text}_HunterAgent.{ext}"
+    filename = f"{symbol}_{date_text}_HunterAgents.{ext}"
     ascii_name = filename.encode("ascii", "ignore").decode() or f"report.{ext}"
     return {
         "Content-Disposition": f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'

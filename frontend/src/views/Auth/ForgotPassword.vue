@@ -44,6 +44,9 @@
           <router-link to="/login">返回登录</router-link>
         </div>
       </el-card>
+      <div class="auth-beian">
+        <IcpBeian />
+      </div>
     </div>
   </div>
 </template>
@@ -55,6 +58,7 @@ import { ElMessage } from 'element-plus'
 import { authApi, extractAuthError } from '@/api/auth'
 import CaptchaImage from '@/components/Auth/CaptchaImage.vue'
 import SmsCodeButton from '@/components/Auth/SmsCodeButton.vue'
+import IcpBeian from '@/components/Layout/IcpBeian.vue'
 
 const router = useRouter()
 const formRef = ref()
@@ -135,6 +139,11 @@ const submit = async () => {
 .login-container {
   width: 100%;
   max-width: 400px;
+}
+.auth-beian {
+  margin-top: 16px;
+  text-align: center;
+  color: #fff;
 }
 .login-header {
   text-align: center;

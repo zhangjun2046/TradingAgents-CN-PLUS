@@ -62,6 +62,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useNotificationStore } from '@/stores/notifications'
 import { useAuthStore } from '@/stores/auth'
@@ -145,8 +146,10 @@ onUnmounted(() => {
   notifStore.disconnect()
 })
 
+const router = useRouter()
+
 function showHelp() {
-  window.open('https://mp.weixin.qq.com/s/ppsYiBncynxlsfKFG8uEbw', '_blank')
+  router.push('/about')
 }
 </script>
 
