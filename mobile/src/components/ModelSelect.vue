@@ -1,9 +1,13 @@
 <template>
+  <view v-if="options.length === 0" class="model-box" @click="emit('empty')">
+    <text class="model-name is-empty">{{ emptyText || "暂无可选模型" }}</text>
+    <text class="model-arrow">▾</text>
+  </view>
   <picker
+    v-else
     mode="selector"
     :range="labels"
     :value="currentIndex"
-    :disabled="options.length === 0"
     @change="onChange"
   >
     <view class="model-box">
@@ -27,9 +31,14 @@ const props = defineProps<{
   modelValue: string;
   /** quick：快速分析模型；deep：深度决策模型（影响标签展示） */
   variant: "quick" | "deep";
+  /** 名单为空时显示的文案 */
+  emptyText?: string;
 }>();
 
-const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
+const emit = defineEmits<{
+  (e: "update:modelValue", value: string): void;
+  (e: "empty"): void;
+}>();
 
 const labels = computed(() => props.options.map((o) => o.display_name));
 
@@ -79,6 +88,10 @@ function onChange(e: { detail: { value: number | string } }) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.model-name.is-empty {
+  color: #909399;
 }
 
 .model-tags {

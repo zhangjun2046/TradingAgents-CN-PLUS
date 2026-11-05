@@ -95,6 +95,8 @@
             v-model="form.quickModel"
             :options="quickOptions"
             variant="quick"
+            :empty-text="auth.isLoggedIn ? '' : '登录后显示可用模型'"
+            @empty="onModelsNeedLogin"
           />
         </view>
         <view class="field">
@@ -105,6 +107,8 @@
             v-model="form.deepModel"
             :options="deepOptions"
             variant="deep"
+            :empty-text="auth.isLoggedIn ? '' : '登录后显示可用模型'"
+            @empty="onModelsNeedLogin"
           />
         </view>
         <text v-if="modelNotice" class="model-notice">{{ modelNotice }}</text>
@@ -331,7 +335,15 @@ function pickModel(
 }
 
 async function loadModels() {
-  const { data, fromFallback, loadError, empty } = await getPublicModels();
+  const { data, loggedOut, loadError, empty } = await getPublicModels();
+  if (loggedOut) {
+    models.value = null;
+    form.quickModel = "";
+    form.deepModel = "";
+    modelsBlocked.value = false;
+    modelNotice.value = "";
+    return;
+  }
   if (loadError || empty || !data) {
     models.value = data;
     form.quickModel = "";
@@ -355,10 +367,26 @@ async function loadModels() {
     data.deep_models
   );
   console.info("[Analysis] models ready", {
-    fromFallback,
     quick: form.quickModel,
     deep: form.deepModel,
   });
+}
+
+let loginRedirectTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearLoginRedirect() {
+  if (!loginRedirectTimer) return;
+  clearTimeout(loginRedirectTimer);
+  loginRedirectTimer = null;
+}
+
+function onModelsNeedLogin() {
+  if (auth.isLoggedIn || loginRedirectTimer) return;
+  uni.showToast({ title: "登录后显示可用模型", icon: "none", duration: 1000 });
+  loginRedirectTimer = setTimeout(() => {
+    loginRedirectTimer = null;
+    if (!auth.isLoggedIn) goLogin();
+  }, 1000);
 }
 
 // ---------- 股票名称标签（防抖，失败静默） ----------
@@ -406,14 +434,12 @@ function validateForm(): boolean {
 
 async function onSubmit() {
   if (submitting.value) return;
-  if (!validateForm()) return;
-
   auth.hydrateFromStorage();
   if (!auth.isLoggedIn) {
-    console.info("[Analysis] login required, redirect to login");
     goLogin();
     return;
   }
+  if (!validateForm()) return;
 
   const payload = buildSingleAnalysisPayload({
     symbol: codeCheck.value.normalized,
@@ -542,10 +568,12 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener("visibilitychange", onVisibilityChange);
+  clearLoginRedirect();
   analysis.pause();
 });
 
 onHide(() => {
+  clearLoginRedirect();
   analysis.pause();
 });
 

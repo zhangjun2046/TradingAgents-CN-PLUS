@@ -20,6 +20,12 @@
       }
     },
     {
+      "path": "pages/mine/about",
+      "style": {
+        "navigationBarTitleText": "关于我们"
+      }
+    },
+    {
       "path": "pages/auth/login",
       "style": {
         "navigationBarTitleText": "登录"

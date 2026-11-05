@@ -80,5 +80,6 @@ async function onSubmit() {
 .login-btn {
   height: 88rpx;
   line-height: 88rpx;
+  margin-top: 16rpx;
 }
 </style>
