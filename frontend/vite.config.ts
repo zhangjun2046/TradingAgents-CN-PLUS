@@ -134,7 +134,10 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // 跳过等待，立即激活新的Service Worker
         skipWaiting: true,
-        clientsClaim: true
+        clientsClaim: true,
+        // 只给 PC 页面做离线回退。/m/ 是 H5，/api/ 是接口，交给 Nginx 和后端。
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/_/, /\/[^/?]+\.[^/]+$/, /^\/m(?:\/|$)/, /^\/api(?:\/|$)/]
       },
       devOptions: {
         enabled: true, // 开发环境也启用PWA
