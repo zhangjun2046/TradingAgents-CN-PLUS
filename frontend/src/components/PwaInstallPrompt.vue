@@ -70,12 +70,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { isWechatBrowser, shouldOfferPwaInstall } from './pwaInstallGate'
 
+const route = useRoute()
 const showPrompt = ref(false)
 const showIOSPrompt = ref(false)
 let deferredPrompt: any = null
+let iosTimer: number | undefined
+let installTimer: number | undefined
+
+function offerNow(): boolean {
+  return shouldOfferPwaInstall({
+    userAgent: navigator.userAgent,
+    path: route.path,
+  })
+}
+
+function clearInstallTimers(): void {
+  if (iosTimer !== undefined) window.clearTimeout(iosTimer)
+  if (installTimer !== undefined) window.clearTimeout(installTimer)
+  iosTimer = undefined
+  installTimer = undefined
+}
 
 // 检查是否已经安装
 const isInstalled = () => {
@@ -174,12 +193,10 @@ const handleBeforeInstallPrompt = (e: Event) => {
   // 保存事件，稍后使用
   deferredPrompt = e
   
-  // 检查是否应该显示提示
   if (shouldShowPrompt() && !isInstalled()) {
-    // 延迟显示，给用户一些时间浏览页面
-    setTimeout(() => {
-      showPrompt.value = true
-    }, 5000) // 5秒后显示
+    installTimer = window.setTimeout(() => {
+      if (offerNow()) showPrompt.value = true
+    }, 5000)
   }
 }
 
@@ -194,23 +211,29 @@ const handleAppInstalled = () => {
   })
 }
 
+watch(
+  () => route.path,
+  () => {
+    if (!offerNow()) {
+      showPrompt.value = false
+      showIOSPrompt.value = false
+    }
+  }
+)
+
 onMounted(() => {
   console.log('🔍 PWA安装提示组件已挂载')
-  
-  // 检查是否已安装
-  if (isInstalled()) {
-    console.log('✅ 应用已安装，不显示提示')
+
+  if (isInstalled() || isWechatBrowser(navigator.userAgent)) {
     return
   }
-  
-  // iOS 设备特殊处理
+
   if (isIOS()) {
     console.log('📱 检测到iOS设备')
     if (shouldShowPrompt()) {
-      // iOS 延迟显示提示
-      setTimeout(() => {
-        showIOSPrompt.value = true
-      }, 10000) // 10秒后显示
+      iosTimer = window.setTimeout(() => {
+        if (offerNow()) showIOSPrompt.value = true
+      }, 10000)
     }
     return
   }
@@ -223,6 +246,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearInstallTimers()
   window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   window.removeEventListener('appinstalled', handleAppInstalled)
   console.log('🧹 已清理PWA安装事件监听器')
