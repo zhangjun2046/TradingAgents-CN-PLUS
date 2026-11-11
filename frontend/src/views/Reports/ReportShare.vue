@@ -76,7 +76,6 @@ import OverviewPanel from './share/OverviewPanel.vue'
 import RolePanel from './share/RolePanel.vue'
 import ShareHeader from './share/ShareHeader.vue'
 import IcpBeian from '@/components/Layout/IcpBeian.vue'
-import { isWechatUserAgent } from './share/exportShare'
 import { OVERVIEW_DEPT_KEY, isOpenedFromApp, logBackToList, resolveReportListUrl } from './share/shareConfig'
 import { useShareReport } from './share/useShareReport'
 
@@ -84,8 +83,6 @@ const route = useRoute()
 const openedFromApp = computed(() => isOpenedFromApp(route.query.from))
 const reportListUrl = resolveReportListUrl()
 const exportOpen = ref(false)
-const wechatGuideShown = ref(false)
-const inWechat = isWechatUserAgent(typeof navigator === 'undefined' ? '' : navigator.userAgent)
 const shareToken = computed(() => String(route.params.token || ''))
 
 const {
@@ -108,15 +105,6 @@ function onSelectDept(deptKey: string): void {
 
 watch(shareToken, () => {
   exportOpen.value = false
-  wechatGuideShown.value = false
-})
-
-/** 微信内报告一加载就打开导出弹层，验收时不用再点一次才能看到引导 */
-watch(report, (value) => {
-  if (!value || !inWechat || wechatGuideShown.value) return
-  exportOpen.value = true
-  wechatGuideShown.value = true
-  console.info('[Share] wechat guide opened')
 })
 
 /** 决策链点击跳转到对应岗位：回顶 + 更新 URL 定位 */
